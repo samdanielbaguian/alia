@@ -1,3 +1,4 @@
+from typing import List, Optional
 from pydantic import BaseModel, EmailStr
 
 
@@ -47,6 +48,3 @@ class RegisterRequest(BaseModel):
                 "shop_name": "Tech Store"
             }
         }
-
-
-from typing import List, Optional
