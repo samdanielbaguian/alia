@@ -1,0 +1,46 @@
+services:
+  # MongoDB service
+  mongodb:
+    image: mongo:7.0
+    container_name: alia-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: alia_db
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - alia-network
+
+  # Backend service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: alia-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017
+      - MONGODB_DB_NAME=alia_db
+      - JWT_SECRET_KEY=change-this-in-production-very-secret-key
+      - JWT_ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=1440
+    depends_on:
+      - mongodb
+    networks:
+      - alia-network
+    volumes:
+      - ./backend/app:/app/app
+
+# Networks
+networks:
+  alia-network:
+    driver: bridge
+
+# Volumes
+volumes:
+  mongodb_data:
+    driver: local
