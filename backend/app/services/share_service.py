@@ -2,6 +2,7 @@ import secrets
 import string
 from typing import Optional
 from datetime import datetime, timedelta
+from urllib.parse import quote
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 from fastapi import HTTPException, status
@@ -9,6 +10,7 @@ import qrcode
 import io
 import base64
 
+from app.core.config import settings
 from app.schemas.share import ProductShareResponse, ProductShareStatsResponse, MerchantShareResponse
 from app.schemas.cart import SharedCartResponse, SharedCartItemResponse
 
@@ -280,12 +282,11 @@ class ShareService:
         await db.product_shares.insert_one(share_data)
         
         # Generate share links
-        base_url = "https://alia.com"  # TODO: Get from config
-        share_link = f"{base_url}/products/share/{share_code}"
+        share_link = f"{settings.BASE_URL}/products/share/{share_code}"
         
-        # WhatsApp message
+        # WhatsApp message with proper URL encoding
         whatsapp_text = f"Découvre ce produit sur Alia : {product['title']} - {product['price']} FCFA {share_link}"
-        whatsapp_link = f"https://wa.me/?text={whatsapp_text.replace(' ', '%20')}"
+        whatsapp_link = f"https://wa.me/?text={quote(whatsapp_text)}"
         
         # QR code
         qr_code = ShareService.generate_qr_code(share_link)
@@ -415,13 +416,12 @@ class ShareService:
         await db.merchant_shares.insert_one(share_data)
         
         # Generate share links
-        base_url = "https://alia.com"  # TODO: Get from config
-        share_link = f"{base_url}/merchants/share/{share_code}"
+        share_link = f"{settings.BASE_URL}/merchants/share/{share_code}"
         
-        # WhatsApp message
+        # WhatsApp message with proper URL encoding
         shop_name = merchant.get("shop_name", "Shop")
         whatsapp_text = f"Découvre cette boutique sur Alia : {shop_name} {share_link}"
-        whatsapp_link = f"https://wa.me/?text={whatsapp_text.replace(' ', '%20')}"
+        whatsapp_link = f"https://wa.me/?text={quote(whatsapp_text)}"
         
         return MerchantShareResponse(
             share_link=share_link,

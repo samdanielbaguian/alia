@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.core.config import settings
 from app.api.deps import get_db, get_current_user
 from app.schemas.cart import (
     AddToCartRequest,
@@ -128,8 +129,7 @@ async def share_cart(
         db=db
     )
     
-    base_url = "https://alia.com"  # TODO: Get from config
-    share_link = f"{base_url}/cart/share/{share['share_code']}"
+    share_link = f"{settings.BASE_URL}/cart/share/{share['share_code']}"
     
     return ShareResponse(
         share_link=share_link,

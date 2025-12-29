@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000"]
     API_V1_PREFIX: str = "/api"
     PROJECT_NAME: str = "Alia"
+    BASE_URL: str = "https://alia.com"  # Base URL for share links
     
     model_config = SettingsConfigDict(
         env_file=".env",
