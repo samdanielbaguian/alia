@@ -26,6 +26,26 @@ class ShareService:
         return ''.join(secrets.choice(characters) for _ in range(length))
     
     @staticmethod
+    def sanitize_text_for_share(text: str, max_length: int = 100) -> str:
+        """
+        Sanitize text for use in share messages.
+        Removes or replaces potentially problematic characters and limits length.
+        """
+        # Remove or replace problematic characters
+        # Keep alphanumerics, spaces, and common safe punctuation
+        safe_chars = set(string.ascii_letters + string.digits + ' .,!?-éèêëàâäôöùûüïîçÉÈÊËÀÂÄÔÖÙÛÜÏÎÇ')
+        sanitized = ''.join(c if c in safe_chars else ' ' for c in text)
+        
+        # Collapse multiple spaces
+        sanitized = ' '.join(sanitized.split())
+        
+        # Limit length
+        if len(sanitized) > max_length:
+            sanitized = sanitized[:max_length].rsplit(' ', 1)[0] + '...'
+        
+        return sanitized
+    
+    @staticmethod
     async def create_cart_share(
         user_id: str,
         expires_in_hours: int,
@@ -285,8 +305,9 @@ class ShareService:
         # Generate share links
         share_link = f"{settings.BASE_URL}/products/share/{share_code}"
         
-        # WhatsApp message with proper URL encoding
-        whatsapp_text = f"Découvre ce produit sur Alia : {product['title']} - {product['price']} FCFA {share_link}"
+        # WhatsApp message with sanitized and URL encoded text
+        sanitized_title = ShareService.sanitize_text_for_share(product['title'], max_length=50)
+        whatsapp_text = f"Découvre ce produit sur Alia : {sanitized_title} - {product['price']} FCFA {share_link}"
         whatsapp_link = f"https://wa.me/?text={quote(whatsapp_text)}"
         
         # QR code
@@ -419,9 +440,10 @@ class ShareService:
         # Generate share links
         share_link = f"{settings.BASE_URL}/merchants/share/{share_code}"
         
-        # WhatsApp message with proper URL encoding
+        # WhatsApp message with sanitized and URL encoded text
         shop_name = merchant.get("shop_name", "Shop")
-        whatsapp_text = f"Découvre cette boutique sur Alia : {shop_name} {share_link}"
+        sanitized_shop_name = ShareService.sanitize_text_for_share(shop_name, max_length=50)
+        whatsapp_text = f"Découvre cette boutique sur Alia : {sanitized_shop_name} {share_link}"
         whatsapp_link = f"https://wa.me/?text={quote(whatsapp_text)}"
         
         return MerchantShareResponse(
