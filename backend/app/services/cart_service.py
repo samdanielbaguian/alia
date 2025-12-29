@@ -2,6 +2,7 @@ from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
+from bson.errors import InvalidId
 from fastapi import HTTPException, status
 
 from app.models.cart import CartItem
@@ -41,7 +42,7 @@ class CartService:
         # Validate product exists
         try:
             product = await db.products.find_one({"_id": ObjectId(product_id)})
-        except Exception:
+        except InvalidId:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid product ID"
@@ -111,7 +112,7 @@ class CartService:
             # Get current product details
             try:
                 product = await db.products.find_one({"_id": ObjectId(item["product_id"])})
-            except Exception:
+            except InvalidId:
                 continue
             
             if not product:
@@ -158,7 +159,7 @@ class CartService:
                 # Validate stock
                 try:
                     product = await db.products.find_one({"_id": ObjectId(item_id)})
-                except Exception:
+                except InvalidId:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Invalid product ID"
@@ -269,7 +270,7 @@ class CartService:
             # Get current product
             try:
                 product = await db.products.find_one({"_id": ObjectId(item["product_id"])})
-            except Exception:
+            except InvalidId:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Invalid product ID: {item['product_id']}"

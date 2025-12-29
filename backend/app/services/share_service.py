@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from urllib.parse import quote
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
+from bson.errors import InvalidId
 from fastapi import HTTPException, status
 import qrcode
 import io
@@ -45,7 +46,7 @@ class ShareService:
         for item in cart["items"]:
             try:
                 product = await db.products.find_one({"_id": ObjectId(item["product_id"])})
-            except Exception:
+            except InvalidId:
                 continue
             
             if product:
@@ -180,7 +181,7 @@ class ShareService:
             # Validate product still exists and has stock
             try:
                 product = await db.products.find_one({"_id": ObjectId(item["product_id"])})
-            except Exception:
+            except InvalidId:
                 continue
             
             if not product or product["stock"] < item["quantity"]:
@@ -252,7 +253,7 @@ class ShareService:
         # Validate product exists
         try:
             product = await db.products.find_one({"_id": ObjectId(product_id)})
-        except Exception:
+        except InvalidId:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid product ID"
@@ -318,7 +319,7 @@ class ShareService:
         # Get product
         try:
             product = await db.products.find_one({"_id": ObjectId(share["product_id"])})
-        except Exception:
+        except InvalidId:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid product ID"
@@ -346,7 +347,7 @@ class ShareService:
         # Validate product ownership
         try:
             product = await db.products.find_one({"_id": ObjectId(product_id)})
-        except Exception:
+        except InvalidId:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid product ID"
