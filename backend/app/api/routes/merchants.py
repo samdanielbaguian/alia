@@ -1,11 +1,13 @@
-from typing import Dict
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Dict, Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 
-from app.api.deps import get_db, get_current_user
+from app.api.deps import get_db, get_current_user, get_current_merchant
 from app.schemas.share import MerchantShareResponse
+from app.schemas.order import OrderResponse, OrderProductResponse, StatusHistoryResponse
 from app.services.share_service import ShareService
+from app.services.order_service import OrderService
 
 router = APIRouter()
 
@@ -165,6 +167,31 @@ async def get_merchant_dashboard(
         reverse=True
     )[:10]
     
+    # Orders by status breakdown
+    orders_by_status = {
+        "pending": 0,
+        "confirmed": 0,
+        "shipped": 0,
+        "delivered": 0,
+        "cancelled": 0
+    }
+    for order in orders:
+        order_status = order.get("status", "pending")
+        if order_status in orders_by_status:
+            orders_by_status[order_status] += 1
+    
+    # Recent orders (last 5)
+    recent_orders = sorted(orders, key=lambda x: x.get("created_at"), reverse=True)[:5]
+    recent_orders_list = [
+        {
+            "id": str(order["_id"]),
+            "total_amount": order["total_amount"],
+            "status": order["status"],
+            "created_at": order["created_at"]
+        }
+        for order in recent_orders
+    ]
+    
     # Analyze demand zones (group orders by user location)
     # TODO: Get user locations from orders
     demand_zones = []
@@ -178,6 +205,9 @@ async def get_merchant_dashboard(
         "orders_count": orders_count,
         "revenue": revenue,
         "top_products": top_products,
+        "orders_by_status": orders_by_status,
+        "recent_orders": recent_orders_list,
+        "pending_orders_count": orders_by_status["pending"],
         "demand_zones": demand_zones
     }
 
@@ -239,4 +269,92 @@ async def view_shared_merchant(
             }
             for p in products
         ]
+    }
+
+
+@router.get("/me/orders")
+async def get_merchant_orders(
+    status_filter: Optional[str] = Query(None, alias="status", description="Filter by order status"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: dict = Depends(get_current_merchant),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Get orders received by the current merchant.
+    
+    Query params:
+    - status: Filter by order status (pending, confirmed, shipped, delivered, cancelled)
+    - limit: Number of orders to return (default: 20, max: 100)
+    - offset: Number of orders to skip for pagination (default: 0)
+    
+    Returns paginated list of orders with customer info.
+    """
+    user_id = str(current_user["_id"])
+    
+    # Get merchant profile
+    merchant = await OrderService.get_merchant_by_user_id(user_id, db)
+    if not merchant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Merchant profile not found"
+        )
+    
+    # Build filter query
+    filter_query = {"merchant_id": merchant["user_id"]}
+    
+    if status_filter:
+        filter_query["status"] = status_filter
+    
+    # Query orders with pagination
+    orders = await db.orders.find(filter_query).skip(offset).limit(limit).to_list(length=limit)
+    total = await db.orders.count_documents(filter_query)
+    
+    # Enhance orders with customer info
+    order_responses = []
+    for order in orders:
+        # Get customer info
+        try:
+            customer = await db.users.find_one({"_id": order["user_id"]})
+        except:
+            try:
+                customer = await db.users.find_one({"_id": ObjectId(order["user_id"])})
+            except:
+                customer = None
+        
+        order_response = OrderResponse(
+            id=str(order["_id"]),
+            user_id=order["user_id"],
+            merchant_id=order["merchant_id"],
+            products=[
+                OrderProductResponse(
+                    product_id=p["product_id"],
+                    quantity=p["quantity"],
+                    price=p["price"],
+                    title=p["title"]
+                )
+                for p in order["products"]
+            ],
+            total_amount=order["total_amount"],
+            status=order["status"],
+            payment_method=order["payment_method"],
+            created_at=order["created_at"],
+            updated_at=order.get("updated_at", order["created_at"]),
+            status_history=[
+                StatusHistoryResponse(**h) for h in order.get("status_history", [])
+            ] if order.get("status_history") else None,
+            cancelled_by=order.get("cancelled_by"),
+            cancellation_reason=order.get("cancellation_reason"),
+            tracking_number=order.get("tracking_number"),
+            shipped_at=order.get("shipped_at"),
+            delivered_at=order.get("delivered_at")
+        )
+        
+        order_responses.append(order_response)
+    
+    return {
+        "orders": order_responses,
+        "total": total,
+        "limit": limit,
+        "offset": offset
     }
