@@ -6,6 +6,9 @@ from datetime import datetime
 from fastapi import HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class OrderService:
@@ -234,7 +237,10 @@ class OrderService:
                 )
             except Exception as e:
                 # Log error but don't fail the cancellation
-                print(f"Error restoring stock for product {product['product_id']}: {e}")
+                logger.error(
+                    f"Error restoring stock for product {product['product_id']}: {e}",
+                    exc_info=True
+                )
     
     @staticmethod
     def get_valid_next_statuses(current_status: str, user_role: str) -> List[str]:

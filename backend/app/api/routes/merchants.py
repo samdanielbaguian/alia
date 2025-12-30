@@ -313,13 +313,15 @@ async def get_merchant_orders(
     # Enhance orders with customer info
     order_responses = []
     for order in orders:
-        # Get customer info
+        # Get customer info - try both string and ObjectId formats
+        customer = None
         try:
             customer = await db.users.find_one({"_id": order["user_id"]})
-        except:
+        except (TypeError, ValueError):
             try:
                 customer = await db.users.find_one({"_id": ObjectId(order["user_id"])})
-            except:
+            except Exception:
+                # Customer not found or invalid ID format
                 customer = None
         
         order_response = OrderResponse(
