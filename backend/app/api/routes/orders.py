@@ -584,13 +584,18 @@ async def cancel_order(
     # Determine cancelled_by
     cancelled_by = "customer" if user_role == "buyer" else "merchant"
     
+    # Build cancellation note
+    note = f"Cancelled: {request.reason}"
+    if request.details:
+        note += f". {request.details}"
+    
     result = await OrderService.update_order_status(
         order_id=order_id,
         new_status="cancelled",
         user_id=user_id,
         user_role=user_role,
         db=db,
-        note=f"Cancelled: {request.reason}. {request.details or ''}",
+        note=note,
         cancelled_by=cancelled_by,
         cancellation_reason=request.reason
     )

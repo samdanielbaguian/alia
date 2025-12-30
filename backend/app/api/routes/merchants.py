@@ -310,20 +310,9 @@ async def get_merchant_orders(
     orders = await db.orders.find(filter_query).skip(offset).limit(limit).to_list(length=limit)
     total = await db.orders.count_documents(filter_query)
     
-    # Enhance orders with customer info
+    # Build order responses
     order_responses = []
     for order in orders:
-        # Get customer info - try both string and ObjectId formats
-        customer = None
-        try:
-            customer = await db.users.find_one({"_id": order["user_id"]})
-        except (TypeError, ValueError):
-            try:
-                customer = await db.users.find_one({"_id": ObjectId(order["user_id"])})
-            except Exception:
-                # Customer not found or invalid ID format
-                customer = None
-        
         order_response = OrderResponse(
             id=str(order["_id"]),
             user_id=order["user_id"],

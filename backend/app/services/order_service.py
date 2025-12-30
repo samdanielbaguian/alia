@@ -215,9 +215,6 @@ class OrderService:
         
         # TODO: Send notification to customer on status change
         
-        # Get updated order
-        updated_order = await db.orders.find_one({"_id": ObjectId(order_id)})
-        
         return {
             "message": f"Order status updated to {new_status}",
             "order_id": order_id,
