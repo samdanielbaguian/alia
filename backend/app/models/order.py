@@ -7,9 +7,19 @@ from pydantic import BaseModel, Field
 class OrderStatus(str, Enum):
     """Order status enumeration."""
     PENDING = "pending"
+    CONFIRMED = "confirmed"  # Payment confirmed, order ready to process
     PAID = "paid"
     SHIPPED = "shipped"
     DELIVERED = "delivered"
+    CANCELLED = "cancelled"
+
+
+class PaymentStatus(str, Enum):
+    """Payment status enumeration for orders."""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
     CANCELLED = "cancelled"
 
 
@@ -29,7 +39,8 @@ class Order(BaseModel):
     products: List[OrderProduct]
     total_amount: float = Field(gt=0)
     status: OrderStatus = OrderStatus.PENDING
-    payment_method: str  # "orange_money", "moov_money", "wave", "stripe"
+    payment_method: str  # "orange_money", "mtn_money", "moov_money"
+    payment_status: Optional[str] = None  # Tracks payment status separately
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     
