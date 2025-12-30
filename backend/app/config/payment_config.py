@@ -109,25 +109,30 @@ def calculate_fees(amount: float, provider: str) -> Dict[str, float]:
     
     Args:
         amount: Payment amount in XOF
-        provider: Payment provider
+        provider: Payment provider (orange_money, mtn_money, moov_money)
         
     Returns:
         Dictionary with fee breakdown
+        
+    Raises:
+        ValueError: If provider is not supported
     """
     fees_config = PAYMENT_CONFIG["fees"]
     
     # Platform commission
     platform_fee = amount * (fees_config["platform_commission_percent"] / 100)
     
-    # Gateway fee based on provider
-    # Map full provider names to short names used in config
-    provider_map = {
-        "orange_money": "orange",
-        "mtn_money": "mtn",
-        "moov_money": "moov"
+    # Gateway fee based on provider - explicit mapping
+    provider_to_config_key = {
+        "orange_money": "orange_gateway_fee_percent",
+        "mtn_money": "mtn_gateway_fee_percent",
+        "moov_money": "moov_gateway_fee_percent"
     }
-    short_provider = provider_map.get(provider, provider.replace("_money", ""))
-    gateway_fee_percent = fees_config.get(f"{short_provider}_gateway_fee_percent", 2.0)
+    
+    if provider not in provider_to_config_key:
+        raise ValueError(f"Unsupported payment provider: {provider}")
+    
+    gateway_fee_percent = fees_config[provider_to_config_key[provider]]
     gateway_fee = amount * (gateway_fee_percent / 100)
     
     # Merchant payout

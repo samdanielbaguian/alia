@@ -640,13 +640,13 @@ class PaymentService:
             }
     
     def _mask_phone(self, phone_number: Optional[str]) -> Optional[str]:
-        """Mask phone number for privacy."""
+        """Mask phone number for privacy (show only last 4 digits)."""
         if not phone_number:
             return None
         
-        # Show only last 4 digits: +2250707****
-        if len(phone_number) > 8:
-            return phone_number[:-6] + "******"
+        # Show only last 4 digits: +225****3456
+        if len(phone_number) >= 8:
+            return phone_number[:4] + "*" * (len(phone_number) - 8) + phone_number[-4:]
         return phone_number
     
     async def get_payment_history(

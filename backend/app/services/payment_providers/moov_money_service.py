@@ -7,10 +7,11 @@ Documentation: https://www.moov-africa.ci/ (Contact Moov for API docs)
 import requests
 import secrets
 import logging
-from typing import Dict, Any, Optional
-from datetime import datetime
+import json
 import hmac
 import hashlib
+from typing import Dict, Any, Optional
+from datetime import datetime
 
 from app.config.payment_config import get_provider_config, get_provider_url, PAYMENT_MODE
 
@@ -180,7 +181,6 @@ class MoovMoneyService:
         Returns:
             HMAC signature
         """
-        import json
         payload_string = json.dumps(payload, sort_keys=True, separators=(',', ':'))
         signature = hmac.new(
             self.api_secret.encode(),
