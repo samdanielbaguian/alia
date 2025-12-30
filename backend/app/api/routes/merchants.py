@@ -4,6 +4,8 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 
 from app.api.deps import get_db, get_current_user
+from app.schemas.share import MerchantShareResponse
+from app.services.share_service import ShareService
 
 router = APIRouter()
 
@@ -177,4 +179,64 @@ async def get_merchant_dashboard(
         "revenue": revenue,
         "top_products": top_products,
         "demand_zones": demand_zones
+    }
+
+
+@router.post("/{merchant_id}/share", response_model=MerchantShareResponse)
+async def share_merchant(
+    merchant_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Generate a shareable link for a merchant shop.
+    
+    Returns:
+    - Direct share link
+    - WhatsApp pre-filled message link
+    """
+    user_id = str(current_user["_id"])
+    
+    return await ShareService.create_merchant_share(
+        merchant_id=merchant_id,
+        user_id=user_id,
+        db=db
+    )
+
+
+@router.get("/share/{share_code}")
+async def view_shared_merchant(
+    share_code: str,
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    View a shared merchant shop (public endpoint).
+    
+    No authentication required.
+    Increments view count and returns merchant profile.
+    """
+    merchant = await ShareService.get_shared_merchant(share_code, db)
+    
+    # Get merchant products
+    products = await db.products.find({"merchant_id": merchant["user_id"]}).limit(20).to_list(length=20)
+    
+    return {
+        "id": str(merchant["_id"]),
+        "user_id": merchant["user_id"],
+        "shop_name": merchant["shop_name"],
+        "description": merchant.get("description", ""),
+        "location": merchant.get("location"),
+        "total_sales": merchant.get("total_sales", 0.0),
+        "rating": merchant.get("rating", 50.0),
+        "created_at": merchant["created_at"],
+        "products_count": len(products),
+        "products": [
+            {
+                "id": str(p["_id"]),
+                "title": p["title"],
+                "price": p["price"],
+                "images": p.get("images", [])
+            }
+            for p in products
+        ]
     }

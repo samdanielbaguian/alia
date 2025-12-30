@@ -1,11 +1,14 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import RedirectResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 from datetime import datetime
 
 from app.api.deps import get_db, get_current_user, get_current_merchant
 from app.schemas.product import ProductCreate, ProductUpdate, ProductResponse
+from app.schemas.share import ProductShareResponse, ProductShareStatsResponse
+from app.services.share_service import ShareService
 from app.utils.helpers import format_document
 
 router = APIRouter()
@@ -330,3 +333,86 @@ async def delete_product(
     await db.products.delete_one({"_id": ObjectId(product_id)})
     
     return None
+
+
+@router.post("/{product_id}/share", response_model=ProductShareResponse)
+async def share_product(
+    product_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Generate a shareable link for a product.
+    
+    Returns:
+    - Direct share link
+    - WhatsApp pre-filled message link
+    - QR code (base64 encoded PNG)
+    """
+    user_id = str(current_user["_id"])
+    
+    return await ShareService.create_product_share(
+        product_id=product_id,
+        user_id=user_id,
+        db=db
+    )
+
+
+@router.get("/share/{share_code}")
+async def view_shared_product(
+    share_code: str,
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    View a shared product (public endpoint).
+    
+    No authentication required.
+    Increments view count and redirects to product detail page.
+    """
+    product = await ShareService.get_shared_product(share_code, db)
+    
+    # In a real app, this would redirect to the frontend product page
+    # For now, return the product details
+    return ProductResponse(
+        id=str(product["_id"]),
+        title=product["title"],
+        description=product["description"],
+        price=product["price"],
+        original_price=product.get("original_price"),
+        images=product.get("images", []),
+        stock=product["stock"],
+        category=product["category"],
+        merchant_id=product["merchant_id"],
+        is_imported=product.get("is_imported", False),
+        source_platform=product.get("source_platform"),
+        source_product_id=product.get("source_product_id"),
+        delivery_days=product.get("delivery_days", 7),
+        age_restricted=product.get("age_restricted", False),
+        location=product.get("location"),
+        created_at=product["created_at"],
+        updated_at=product.get("updated_at", product["created_at"])
+    )
+
+
+@router.get("/{product_id}/share/stats", response_model=ProductShareStatsResponse)
+async def get_product_share_stats(
+    product_id: str,
+    current_user: dict = Depends(get_current_merchant),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Get share statistics for a product (merchant only).
+    
+    Returns:
+    - Total shares
+    - Views from shares
+    - Conversions from shares
+    - Conversion rate
+    """
+    merchant_id = str(current_user["_id"])
+    
+    return await ShareService.get_product_share_stats(
+        product_id=product_id,
+        merchant_id=merchant_id,
+        db=db
+    )

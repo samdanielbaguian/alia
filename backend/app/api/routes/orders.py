@@ -6,7 +6,9 @@ from datetime import datetime
 
 from app.api.deps import get_db, get_current_user
 from app.schemas.order import OrderCreate, OrderResponse, OrderProductResponse
+from app.schemas.cart import OrderFromCartRequest
 from app.services.payment_service import process_payment
+from app.services.cart_service import CartService
 
 router = APIRouter()
 
@@ -228,4 +230,93 @@ async def get_order(
         payment_method=order["payment_method"],
         created_at=order["created_at"],
         updated_at=order.get("updated_at", order["created_at"])
+    )
+
+
+@router.post("/from-cart", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
+async def create_order_from_cart(
+    request: OrderFromCartRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Create an order from the current user's cart.
+    
+    This will:
+    1. Validate all cart items are available
+    2. Process payment
+    3. Create the order
+    4. Clear the cart
+    """
+    user_id = str(current_user["_id"])
+    
+    # Validate cart and get order products
+    order_products = await CartService.validate_cart_for_order(user_id, db)
+    
+    # Calculate total and get merchant_id
+    total_amount = sum(p["price"] * p["quantity"] for p in order_products)
+    merchant_id = order_products[0]["merchant_id"]
+    
+    # Process payment
+    payment_result = await process_payment(
+        amount=total_amount,
+        method=request.payment_method,
+        details={"user_id": user_id}
+    )
+    
+    if payment_result["status"] == "error":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Payment failed: {payment_result.get('message')}"
+        )
+    
+    # Create order
+    order_data = {
+        "user_id": user_id,
+        "merchant_id": merchant_id,
+        "products": order_products,
+        "total_amount": total_amount,
+        "status": "pending",
+        "payment_method": request.payment_method,
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow()
+    }
+    
+    result = await db.orders.insert_one(order_data)
+    order_data["_id"] = result.inserted_id
+    
+    # Update product stock
+    for product in order_products:
+        await db.products.update_one(
+            {"_id": ObjectId(product["product_id"])},
+            {"$inc": {"stock": -product["quantity"]}}
+        )
+    
+    # Update merchant total_sales
+    await db.merchants.update_one(
+        {"user_id": merchant_id},
+        {"$inc": {"total_sales": total_amount}}
+    )
+    
+    # Clear cart
+    await CartService.clear_cart(user_id, db)
+    
+    return OrderResponse(
+        id=str(order_data["_id"]),
+        user_id=order_data["user_id"],
+        merchant_id=order_data["merchant_id"],
+        products=[
+            OrderProductResponse(
+                product_id=p["product_id"],
+                quantity=p["quantity"],
+                price=p["price"],
+                title=p["title"]
+            )
+            for p in order_data["products"]
+        ],
+        total_amount=order_data["total_amount"],
+        status=order_data["status"],
+        payment_method=order_data["payment_method"],
+        created_at=order_data["created_at"],
+        updated_at=order_data["updated_at"]
     )
