@@ -120,7 +120,14 @@ def calculate_fees(amount: float, provider: str) -> Dict[str, float]:
     platform_fee = amount * (fees_config["platform_commission_percent"] / 100)
     
     # Gateway fee based on provider
-    gateway_fee_percent = fees_config.get(f"{provider}_gateway_fee_percent", 2.0)
+    # Map full provider names to short names used in config
+    provider_map = {
+        "orange_money": "orange",
+        "mtn_money": "mtn",
+        "moov_money": "moov"
+    }
+    short_provider = provider_map.get(provider, provider.replace("_money", ""))
+    gateway_fee_percent = fees_config.get(f"{short_provider}_gateway_fee_percent", 2.0)
     gateway_fee = amount * (gateway_fee_percent / 100)
     
     # Merchant payout

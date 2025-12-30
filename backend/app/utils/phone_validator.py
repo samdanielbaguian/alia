@@ -27,9 +27,9 @@ def validate_ivorian_phone(phone_number: str) -> Tuple[bool, Optional[str], Opti
     elif not cleaned.startswith('225'):
         return False, None, "Phone number must start with +225 or 225"
     
-    # Should now be 225XXXXXXXXXX (12 digits)
-    if len(cleaned) != 12:
-        return False, None, f"Invalid phone number length. Expected 12 digits, got {len(cleaned)}"
+    # Should now be 225XXXXXXXXXX (13 digits total: 225 + 10 digit number)
+    if len(cleaned) != 13:
+        return False, None, f"Invalid phone number length. Expected 13 digits (225 + 10), got {len(cleaned)}"
     
     # Check if all characters are digits
     if not cleaned.isdigit():
