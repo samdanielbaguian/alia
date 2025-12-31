@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 
-from app.models.payment import Payment, PaymentStatus, PaymentProvider, Refund
+from app.models.payment import Payment, PaymentStatus, PaymentProvider
 from app.models.refund import Refund as RefundModel, RefundStatus
 from app.utils.phone_validator import validate_ivorian_phone, detect_provider, get_ussd_code
 from app.config.payment_config import PAYMENT_CONFIG, PAYMENT_MODE, calculate_fees
