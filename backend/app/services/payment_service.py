@@ -717,7 +717,7 @@ class PaymentService:
         
         # Update order status to refunded
         await db.orders.update_one(
-            {"_id": payment["order_id"]},
+            {"_id": ObjectId(payment["order_id"])},
             {
                 "$set": {
                     "status": "cancelled",
@@ -737,6 +737,8 @@ class PaymentService:
         
         logger.info(f"Refund completed successfully: {refund_id}")
         
+        refunded_at = datetime.utcnow()
+        
         return {
             "success": True,
             "message": "Refund processed successfully",
@@ -744,7 +746,7 @@ class PaymentService:
             "payment_id": payment_id,
             "amount": amount,
             "status": "refunded",
-            "refunded_at": datetime.utcnow().isoformat()
+            "refunded_at": refunded_at.isoformat()
         }
 
     async def _call_provider_refund(

@@ -30,10 +30,10 @@ class TestRefundService:
         mock_db.orders = MagicMock()
         mock_db.refunds = MagicMock()
         
-        # Mock payment data
+        # Mock payment data with valid ObjectId
         mock_payment = {
             "payment_id": "pay_test123",
-            "order_id": "order_test123",
+            "order_id": "507f1f77bcf86cd799439011",  # Valid ObjectId
             "user_id": "user123",
             "merchant_id": "merchant123",
             "amount": 46000,
@@ -250,10 +250,10 @@ class TestRefundService:
         mock_db.orders = MagicMock()
         mock_db.refunds = MagicMock()
         
-        # Mock payment data
+        # Mock payment data with valid ObjectId
         mock_payment = {
             "payment_id": "pay_test123",
-            "order_id": "order_test123",
+            "order_id": "507f1f77bcf86cd799439011",  # Valid ObjectId
             "user_id": "user123",
             "merchant_id": "merchant123",
             "amount": 46000,
