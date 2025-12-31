@@ -17,6 +17,14 @@ from app.utils.phone_validator import get_ussd_code
 logger = logging.getLogger(__name__)
 
 
+# Magic phone numbers for automated simulation
+MAGIC_NUMBERS = {
+    "+2250777123456": "SUCCESS",   # Auto-complete after delay
+    "+2250777123457": "PENDING",   # Stay pending (manual webhook required)
+    "+2250777123458": "FAILED"     # Auto-fail after delay
+}
+
+
 class SimulationService:
     """Payment simulation service for testing."""
     
@@ -32,8 +40,12 @@ class SimulationService:
         Simulate payment initiation.
         
         Phone number patterns:
-        - Ending in 0000: Auto-success after delay
-        - Ending in 9999: Auto-failure
+        - Magic numbers (specific behavior):
+          - +2250777123456: Auto-success after delay
+          - +2250777123457: Stay pending (manual webhook required)
+          - +2250777123458: Auto-fail after delay
+        - Ending in 0000: Auto-success after delay (old pattern)
+        - Ending in 9999: Auto-failure (old pattern)
         - Other: Pending (requires manual confirmation)
         
         Args:
@@ -41,6 +53,7 @@ class SimulationService:
             phone_number: Customer's phone number
             order_id: Order identifier
             payment_id: Payment identifier
+            provider: Payment provider (orange_money, mtn_money, moov_money)
             
         Returns:
             Simulated payment initiation response
@@ -50,19 +63,40 @@ class SimulationService:
         # Generate mock transaction ID
         transaction_id = f"SIM_{secrets.token_hex(8).upper()}"
         
-        # Determine behavior based on phone number
+        # Determine behavior based on phone number (magic numbers)
+        magic_behavior = MAGIC_NUMBERS.get(phone_number, "PENDING")
+        
         simulation_config = PAYMENT_CONFIG["simulation"]
-        auto_success = phone_number.endswith(simulation_config["auto_success_pattern"])
-        auto_failure = phone_number.endswith(simulation_config["auto_failure_pattern"])
+        auto_success = magic_behavior == "SUCCESS"
+        auto_failure = magic_behavior == "FAILED"
+        
+        # Fallback to old pattern matching if not a magic number
+        if magic_behavior == "PENDING":
+            auto_success = phone_number.endswith(simulation_config["auto_success_pattern"])
+            auto_failure = phone_number.endswith(simulation_config["auto_failure_pattern"])
         
         if auto_failure:
             logger.info(f"[SIMULATION] Auto-failure pattern detected for {phone_number}")
+            # Schedule automatic failure after 3 seconds
+            asyncio.create_task(
+                SimulationService._auto_fail_payment(
+                    payment_id=payment_id,
+                    transaction_id=transaction_id,
+                    amount=amount,
+                    phone_number=phone_number,
+                    provider=provider,
+                    delay_seconds=3
+                )
+            )
             return {
-                "success": False,
+                "success": True,
                 "transaction_id": transaction_id,
-                "status": "failed",
-                "message": "Simulation: Payment failed (test pattern 9999)",
-                "error_code": "INSUFFICIENT_FUNDS"
+                "status": "pending",
+                "message": f"Simulation: Payment will auto-fail in 3 seconds (magic number)",
+                "ussd_code": get_ussd_code(provider),
+                "provider": provider,
+                "simulation_mode": True,
+                "auto_failure": True
             }
         
         # Get correct USSD code for provider
@@ -74,6 +108,18 @@ class SimulationService:
         if auto_success:
             logger.info(f"[SIMULATION] Auto-success pattern detected for {phone_number}")
             message = f"Simulation: Payment will auto-complete in {simulation_config['auto_process_delay_seconds']} seconds (Provider: {provider.upper()})"
+            
+            # Schedule automatic success after delay
+            asyncio.create_task(
+                SimulationService._auto_complete_payment(
+                    payment_id=payment_id,
+                    transaction_id=transaction_id,
+                    amount=amount,
+                    phone_number=phone_number,
+                    provider=provider,
+                    delay_seconds=simulation_config['auto_process_delay_seconds']
+                )
+            )
             
         return {
             "success": True,
@@ -171,6 +217,144 @@ class SimulationService:
         # For now, we just log it
         await asyncio.sleep(delay_seconds)
         logger.info(f"[SIMULATION] Auto-completed payment {payment_id}")
+    
+    @staticmethod
+    async def _auto_complete_payment(
+        payment_id: str,
+        transaction_id: str,
+        amount: float,
+        phone_number: str,
+        provider: str,
+        delay_seconds: int = 5
+    ):
+        """
+        Automatically complete payment after delay (simulation only).
+        
+        This simulates the provider webhook callback for successful payment.
+        
+        Args:
+            payment_id: Payment identifier
+            transaction_id: Simulated transaction ID
+            amount: Payment amount
+            phone_number: Customer phone number
+            provider: Payment provider
+            delay_seconds: Delay before auto-completion
+        """
+        logger.info(f"[SIMULATION] Scheduling auto-complete for payment {payment_id} in {delay_seconds}s")
+        
+        await asyncio.sleep(delay_seconds)
+        
+        try:
+            # Import here to avoid circular dependencies
+            from app.core.database import get_database
+            from datetime import datetime
+            
+            db = get_database()
+            
+            # Update payment status to completed
+            result = await db.payments.update_one(
+                {"payment_id": payment_id},
+                {
+                    "$set": {
+                        "status": "completed",
+                        "completed_at": datetime.utcnow(),
+                        "webhook_received_at": datetime.utcnow(),
+                        "updated_at": datetime.utcnow(),
+                        "metadata.auto_completed": True,
+                        "metadata.simulation_auto_trigger": True
+                    }
+                }
+            )
+            
+            if result.modified_count == 0:
+                logger.warning(f"[SIMULATION] Failed to auto-complete payment {payment_id}")
+                return
+            
+            # Get payment details to update order
+            payment = await db.payments.find_one({"payment_id": payment_id})
+            
+            if payment:
+                # Update associated order status
+                await db.orders.update_one(
+                    {"_id": payment["order_id"]},
+                    {
+                        "$set": {
+                            "status": "confirmed",
+                            "payment_status": "completed",
+                            "updated_at": datetime.utcnow()
+                        },
+                        "$push": {
+                            "status_history": {
+                                "status": "confirmed",
+                                "changed_at": datetime.utcnow(),
+                                "changed_by": "system",
+                                "note": f"Payment completed automatically (simulation) - {transaction_id}"
+                            }
+                        }
+                    }
+                )
+                
+                logger.info(f"[SIMULATION] ✅ Auto-completed payment {payment_id} and updated order {payment['order_id']}")
+            
+        except Exception as e:
+            logger.error(f"[SIMULATION] Error auto-completing payment {payment_id}: {str(e)}")
+    
+    @staticmethod
+    async def _auto_fail_payment(
+        payment_id: str,
+        transaction_id: str,
+        amount: float,
+        phone_number: str,
+        provider: str,
+        delay_seconds: int = 3
+    ):
+        """
+        Automatically fail payment after delay (simulation only).
+        
+        This simulates the provider webhook callback for failed payment.
+        
+        Args:
+            payment_id: Payment identifier
+            transaction_id: Simulated transaction ID
+            amount: Payment amount
+            phone_number: Customer phone number
+            provider: Payment provider
+            delay_seconds: Delay before auto-failure
+        """
+        logger.info(f"[SIMULATION] Scheduling auto-fail for payment {payment_id} in {delay_seconds}s")
+        
+        await asyncio.sleep(delay_seconds)
+        
+        try:
+            # Import here to avoid circular dependencies
+            from app.core.database import get_database
+            from datetime import datetime
+            
+            db = get_database()
+            
+            # Update payment status to failed
+            result = await db.payments.update_one(
+                {"payment_id": payment_id},
+                {
+                    "$set": {
+                        "status": "failed",
+                        "failure_reason": "Insufficient balance (simulated failure via magic number)",
+                        "webhook_received_at": datetime.utcnow(),
+                        "updated_at": datetime.utcnow(),
+                        "metadata.auto_failed": True,
+                        "metadata.simulation_auto_trigger": True
+                    }
+                }
+            )
+            
+            if result.modified_count == 0:
+                logger.warning(f"[SIMULATION] Failed to auto-fail payment {payment_id}")
+                return
+            
+            logger.info(f"[SIMULATION] ❌ Auto-failed payment {payment_id}")
+            
+        except Exception as e:
+            logger.error(f"[SIMULATION] Error auto-failing payment {payment_id}: {str(e)}")
     
     @staticmethod
     def verify_webhook_signature(signature: str, payload: Dict[str, Any]) -> bool:
