@@ -1,0 +1,11 @@
+{
+  "email":  "client1@alia.com",
+  "password": "password123",
+  "role": "customer",
+  "age": 25,
+  "preferences": ["fashion", "shoes", "sports"],
+  "location": {
+    "lat": 5.3700,
+    "lng": -4.0100
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "id": "6952dfb70f5f01144f5b4faa",
+  "email": "marchand33@alia.com",
+  "role": "merchant",
+  "age": 35,
+  "preferences": [
+    "fashion"
+  ],
+  "good_rate": 50,
+  "location": null,
+  "created_at": "2025-12-29T20:08:23.008000"
+}

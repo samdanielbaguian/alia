@@ -1,0 +1,73 @@
+{
+  "winner": {
+    "product_id": "6952e16c0f5f01144f5b4fac",
+    "merchant_id": "6952dfb70f5f01144f5b4faa",
+    "shop_name": "Chaussures Premium CI",
+    "title": "Nike Air Max 2024",
+    "price": 46000,
+    "stock": 30,
+    "delivery_days": 2,
+    "good_rate": 50,
+    "distance_km": 247.4106029809464,
+    "scores": {
+      "stock": 30,
+      "distance": 0,
+      "rating": 50,
+      "total": 24.5
+    }
+  },
+  "all_offers": [
+    {
+      "product_id": "6952e16c0f5f01144f5b4fac",
+      "merchant_id": "6952dfb70f5f01144f5b4faa",
+      "shop_name": "Chaussures Premium CI",
+      "title": "Nike Air Max 2024",
+      "price": 46000,
+      "stock": 30,
+      "delivery_days": 2,
+      "good_rate": 50,
+      "distance_km": 247.4106029809464,
+      "scores": {
+        "stock": 30,
+        "distance": 0,
+        "rating": 50,
+        "total": 24.5
+      }
+    },
+    {
+      "product_id": "6952cf7957ace0e496f33e72",
+      "merchant_id": "6952cea757ace0e496f33e70",
+      "shop_name": "Chaussures Premium CI",
+      "title": "Nike Air Max 2024",
+      "price": 47000,
+      "stock": 20,
+      "delivery_days": 3,
+      "good_rate": 50,
+      "distance_km": 565.897853378109,
+      "scores": {
+        "stock": 20,
+        "distance": 0,
+        "rating": 50,
+        "total": 20.5
+      }
+    },
+    {
+      "product_id": "6952cd3357ace0e496f33e6d",
+      "merchant_id": "6952ca5a57ace0e496f33e6b",
+      "shop_name": "Boutique Mode Abidjan",
+      "title": "Nike Air Max 2024",
+      "price": 45000,
+      "stock": 0,
+      "delivery_days": 2,
+      "good_rate": 50,
+      "distance_km": 567.8282144652342,
+      "scores": {
+        "stock": 0,
+        "distance": 0,
+        "rating": 50,
+        "total": 12.5
+      }
+    }
+  ],
+  "total_merchants": 3
+}

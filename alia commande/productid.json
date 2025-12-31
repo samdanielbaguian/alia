@@ -1,0 +1,24 @@
+{
+  "id": "6952cd3357ace0e496f33e6d",
+  "title": "Nike Air Max 2024",
+  "description": "Sneakers Nike Air Max confortables, parfaites pour le sport et le quotidien.  Disponibles en plusieurs tailles.",
+  "price": 45000,
+  "original_price": null,
+  "images": [
+    "https://static.nike.com/a/images/t_PDP_1280_v1/f_auto/air-max. jpg"
+  ],
+  "stock": 50,
+  "category": "chaussures",
+  "merchant_id": "6952ca5a57ace0e496f33e6b",
+  "is_imported": false,
+  "source_platform": null,
+  "source_product_id": null,
+  "delivery_days": 2,
+  "age_restricted": false,
+  "location": {
+    "lat": 5.36,
+    "lng": -4.0083
+  },
+  "created_at": "2025-12-29T18:49:23.004210",
+  "updated_at": "2025-12-29T18:49:23.004214"
+}

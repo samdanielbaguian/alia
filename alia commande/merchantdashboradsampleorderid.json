@@ -1,0 +1,18 @@
+{
+  "merchant_id": "6952dfb70f5f01144f5b4faa",
+  "shop_name": "Chaussures Premium CI",
+  "total_sales": 92000,
+  "rating": 50,
+  "products_count": 3,
+  "orders_count": 1,
+  "revenue": 92000,
+  "top_products": [
+    {
+      "product_id": "6952e16c0f5f01144f5b4fac",
+      "title": "Nike Air Max 2024",
+      "quantity_sold": 2,
+      "revenue": 92000
+    }
+  ],
+  "demand_zones": []
+}

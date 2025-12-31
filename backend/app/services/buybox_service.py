@@ -1,14 +1,15 @@
 from typing import Dict, List, Optional
-from app.core.database import get_database
+from bson import ObjectId
+from app. core.database import get_database
 from app.utils.geolocation import calculate_distance
 
 
-async def calculate_buybox_winner(product_title: str, user_location: Optional[Dict[str, float]] = None) -> Dict:
+async def calculate_buybox_winner(product_title: str, user_location:  Optional[Dict[str, float]] = None) -> Dict:
     """
-    Calculate the Buy Box winner for a product based on multiple factors.
+    Calculate the Buy Box winner for a product based on multiple factors. 
     
     The Buy Box algorithm determines which merchant should be featured for a product
-    by considering stock availability, geographic proximity, and merchant rating.
+    by considering stock availability, geographic proximity, and merchant rating. 
     
     Algorithm:
         - Stock availability: 40% weight (more stock = better)
@@ -17,7 +18,7 @@ async def calculate_buybox_winner(product_title: str, user_location: Optional[Di
         
     Args:
         product_title: Title of the product to find merchants for
-        user_location: User's location as {"lat": float, "lng": float}
+        user_location: User's location as {"lat":  float, "lng": float}
         
     Returns:
         Dictionary containing:
@@ -30,7 +31,7 @@ async def calculate_buybox_winner(product_title: str, user_location: Optional[Di
                 "product_id": "123",
                 "merchant_id": "merchant1",
                 "price": 299.99,
-                "score": 87.5
+                "score":  87.5
             },
             "all_offers": [...]
         }
@@ -57,7 +58,7 @@ async def calculate_buybox_winner(product_title: str, user_location: Optional[Di
         return {
             "winner": None,
             "all_offers": [],
-            "message": "No merchants found selling this product"
+            "total_merchants": 0
         }
     
     # Calculate scores for each merchant
@@ -66,7 +67,13 @@ async def calculate_buybox_winner(product_title: str, user_location: Optional[Di
     for product in matching_products:
         # Get merchant information
         merchant = await db.merchants.find_one({"user_id": product["merchant_id"]})
-        user = await db.users.find_one({"_id": product["merchant_id"]})
+        
+        # Convert merchant_id string to ObjectId for user lookup
+        try: 
+            user_object_id = ObjectId(product["merchant_id"])
+            user = await db.users.find_one({"_id": user_object_id})
+        except Exception:
+            user = None
         
         if not user:
             continue
@@ -89,7 +96,7 @@ async def calculate_buybox_winner(product_title: str, user_location: Optional[Di
                 distance_km = calculate_distance(user_location, product["location"])
                 # Closer = better. 0km = 100 points, 50km = 50 points, 100+km = 0 points
                 distance_score = max(0, 100 - distance_km)
-            except Exception:
+            except Exception: 
                 distance_score = 50  # Default if calculation fails
         
         # Calculate weighted total score
@@ -100,18 +107,22 @@ async def calculate_buybox_winner(product_title: str, user_location: Optional[Di
             (good_rate * 0.25)
         )
         
+        # Get merchant info for display
+        shop_name = merchant.get("shop_name", "Unknown Shop") if merchant else "Unknown Shop"
+        
         offers.append({
             "product_id": str(product["_id"]),
             "merchant_id": product["merchant_id"],
+            "shop_name": shop_name,
             "title": product["title"],
             "price": product["price"],
             "stock": stock,
             "delivery_days": product.get("delivery_days", 7),
             "good_rate": good_rate,
-            "distance_km": calculate_distance(user_location, product["location"]) if user_location and product.get("location") else None,
+            "distance_km": calculate_distance(user_location, product["location"]) if user_location and product. get("location") else None,
             "scores": {
                 "stock": round(stock_score, 2),
-                "distance": round(distance_score, 2),
+                "distance":  round(distance_score, 2),
                 "rating": round(good_rate, 2),
                 "total": round(total_score, 2)
             }
@@ -125,5 +136,5 @@ async def calculate_buybox_winner(product_title: str, user_location: Optional[Di
     return {
         "winner": winner,
         "all_offers": offers,
-        "total_merchants": len(offers)
+        "total_merchants":  len(offers)
     }

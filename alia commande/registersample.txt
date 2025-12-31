@@ -1,0 +1,12 @@
+{
+  "email": "marchand33@alia.com",
+  "password": "password123",
+  "role": "merchant",
+  "age": 35,
+  "preferences": ["fashion"],
+  "location": {
+    "lat": 5.3800,
+    "lng": -13.0200
+  },
+  "shop_name": "Chaussures Premium CI"
+}
