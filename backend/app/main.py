@@ -4,7 +4,7 @@ import logging
 
 from app.core.config import settings
 from app.core.database import connect_to_mongo, close_mongo_connection
-from app.api.routes import auth, products, merchants, orders, aliexpress, buybox
+from app.api.routes import auth, products, merchants, orders, aliexpress, buybox, cart, payments
 
 # Configure logging
 logging.basicConfig(
@@ -78,8 +78,10 @@ app.include_router(auth.router, prefix=f"{settings.API_V1_PREFIX}/auth", tags=["
 app.include_router(products.router, prefix=f"{settings.API_V1_PREFIX}/products", tags=["Products"])
 app.include_router(merchants.router, prefix=f"{settings.API_V1_PREFIX}/merchants", tags=["Merchants"])
 app.include_router(orders.router, prefix=f"{settings.API_V1_PREFIX}/orders", tags=["Orders"])
+app.include_router(payments.router, prefix=f"{settings.API_V1_PREFIX}/payments", tags=["Payments"])
 app.include_router(aliexpress.router, prefix=f"{settings.API_V1_PREFIX}/aliexpress", tags=["AliExpress"])
 app.include_router(buybox.router, prefix=f"{settings.API_V1_PREFIX}/buybox", tags=["Buy Box"])
+app.include_router(cart.router, prefix=f"{settings.API_V1_PREFIX}/cart", tags=["Cart"])
 
 
 if __name__ == "__main__":
