@@ -12,6 +12,7 @@ from typing import Dict, Any, Optional
 import logging
 
 from app.config.payment_config import PAYMENT_CONFIG
+from app.utils.phone_validator import get_ussd_code
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,8 @@ class SimulationService:
         amount: float,
         phone_number: str,
         order_id: str,
-        payment_id: str
+        payment_id: str,
+        provider: str = "orange_money"
     ) -> Dict[str, Any]:
         """
         Simulate payment initiation.
@@ -63,18 +65,23 @@ class SimulationService:
                 "error_code": "INSUFFICIENT_FUNDS"
             }
         
+        # Get correct USSD code for provider
+        ussd_code = get_ussd_code(provider)
+
         status = "pending"
-        message = f"Veuillez composer le code USSD pour confirmer le paiement de {amount:.0f} FCFA"
+        message = f"Veuillez composer {ussd_code} pour confirmer le paiement de {amount:.0f} FCFA"
         
         if auto_success:
             logger.info(f"[SIMULATION] Auto-success pattern detected for {phone_number}")
-            message = f"Simulation: Payment will auto-complete in {simulation_config['auto_process_delay_seconds']} seconds"
+            message = f"Simulation: Payment will auto-complete in {simulation_config['auto_process_delay_seconds']} seconds (Provider: {provider.upper()})"
             
         return {
             "success": True,
             "transaction_id": transaction_id,
             "status": status,
             "message": message,
+            "ussd_code": ussd_code,
+            "provider": provider,
             "simulation_mode": True,
             "auto_success": auto_success
         }
