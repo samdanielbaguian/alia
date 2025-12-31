@@ -283,47 +283,41 @@ async def refund_payment(
     **Conditions:**
     - Payment must be "completed"
     - Can request partial or full refund
+    - Cannot refund more than the original payment amount
+    - Cannot refund if another refund is already in progress or completed
     
-    **Note:**
-    This endpoint is currently a placeholder. Full refund implementation
-    requires integration with provider refund APIs.
+    **Process:**
+    1. Validates merchant authorization
+    2. Validates payment status and amount
+    3. Creates refund record
+    4. Calls provider refund API (simulated in SIMULATION mode)
+    5. Updates payment status to "refunded"
+    6. Updates order status to "cancelled"
+    7. Records refund in status history
     
     **Returns:**
     - Refund ID for tracking
-    - Refund status
+    - Refund status and timestamp
+    - Updated payment and order information
     """
     user_id = str(current_user["_id"])
     
-    # Get payment
-    payment = await db.payments.find_one({"payment_id": payment_id})
+    result = await payment_service.refund_payment(
+        payment_id=payment_id,
+        amount=request.amount,
+        reason=request.reason,
+        note=request.note,
+        merchant_id=user_id,
+        db=db
+    )
     
-    if not payment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Payment not found"
-        )
-    
-    # Check authorization (must be merchant)
-    if payment["merchant_id"] != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the merchant can refund payments"
-        )
-    
-    # Check payment status
-    if payment["status"] != "completed":
+    if not result.get("success"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Can only refund completed payments"
+            detail=result.get("message", "Refund failed")
         )
     
-    # TODO: Implement actual refund logic with provider APIs
-    # For now, return placeholder response
-    
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Refund functionality is not yet implemented. Please contact support."
-    )
+    return RefundResponse(**result)
 
 
 # Admin endpoints for testing in SIMULATION mode

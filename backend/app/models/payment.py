@@ -102,7 +102,7 @@ class Payment(BaseModel):
 class Refund(BaseModel):
     """Refund model for MongoDB."""
     id: Optional[str] = Field(None, alias="_id")
-    refund_id: str = Field(default_factory=lambda: f"ref_{secrets.token_urlsafe(12)}")
+    refund_id: str = Field(default_factory=lambda: f"ref_{secrets.token_urlsafe(16)}")
     
     # References
     payment_id: str
