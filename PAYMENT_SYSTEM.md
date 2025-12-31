@@ -79,10 +79,17 @@ MOOV_GATEWAY_FEE_PERCENT=2.0
 
 The system starts in SIMULATION mode by default. No real API credentials needed!
 
-**Special Phone Numbers for Testing:**
+**Magic Phone Numbers for Automated Testing (Issue #6):**
+- `+2250777123456`: Auto-completes successfully after 5 seconds (no manual webhook needed)
+- `+2250777123457`: Stays pending (requires manual webhook simulation)
+- `+2250777123458`: Auto-fails after 3 seconds (no manual webhook needed)
+
+**Legacy Pattern Phone Numbers (still supported):**
 - `+2250707******0000`: Auto-success after 5 seconds
-- `+2250707******9999`: Auto-failure
+- `+2250707******9999`: Auto-failure after 3 seconds
 - Other numbers: Pending (use admin endpoints to simulate)
+
+**Note:** Magic numbers take precedence over pattern matching. When a magic number is used, the payment automatically transitions to the appropriate state (completed or failed) after the specified delay, and the associated order is updated accordingly.
 
 ## 📡 API Endpoints
 

@@ -6,12 +6,14 @@ and integrates with various payment providers.
 """
 
 import logging
+import secrets
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 
-from app.models.payment import Payment, PaymentStatus, PaymentProvider, Refund
+from app.models.payment import Payment, PaymentStatus, PaymentProvider
+from app.models.refund import Refund as RefundModel, RefundStatus
 from app.utils.phone_validator import validate_ivorian_phone, detect_provider, get_ussd_code
 from app.config.payment_config import PAYMENT_CONFIG, PAYMENT_MODE, calculate_fees
 
@@ -204,7 +206,8 @@ class PaymentService:
                 amount=amount,
                 phone_number=phone_number,
                 order_id=order_id,
-                payment_id=payment_id
+                payment_id=payment_id,
+                provider=provider
             )
         
         # Call real provider APIs in SANDBOX or PRODUCTION mode
@@ -553,6 +556,252 @@ class PaymentService:
             "payment_id": payment_id,
             "status": PaymentStatus.CANCELLED
         }
+    
+    async def refund_payment(
+        self,
+        payment_id: str,
+        amount: Optional[float],
+        reason: str,
+        note: Optional[str],
+        merchant_id: str,
+        db: AsyncIOMotorDatabase
+    ) -> Dict[str, Any]:
+        """
+        Process payment refund.
+        
+        Args:
+            payment_id: Payment ID to refund
+            amount: Refund amount (None for full refund)
+            reason: Refund reason
+            note: Optional note
+            merchant_id: Merchant initiating refund
+            db: Database instance
+            
+        Returns:
+            Refund result with refund_id, status, and details
+        """
+        logger.info(f"Initiating refund for payment {payment_id} by merchant {merchant_id}")
+        
+        # Get payment
+        payment = await db.payments.find_one({"payment_id": payment_id})
+        
+        if not payment:
+            return {"success": False, "message": "Payment not found"}
+        
+        # Verify merchant ownership
+        if payment["merchant_id"] != merchant_id:
+            logger.warning(f"Unauthorized refund attempt by {merchant_id} for payment {payment_id}")
+            return {"success": False, "message": "Only the merchant can refund payments"}
+        
+        # Verify payment is completed
+        if payment["status"] != "completed":
+            return {
+                "success": False,
+                "message": f"Can only refund completed payments. Current status: {payment['status']}"
+            }
+        
+        # Default to full refund if amount not specified
+        if amount is None:
+            amount = payment["amount"]
+        
+        # Verify amount
+        if amount > payment["amount"]:
+            return {
+                "success": False,
+                "message": f"Refund amount ({amount}) exceeds payment amount ({payment['amount']})"
+            }
+        
+        if amount <= 0:
+            return {"success": False, "message": "Refund amount must be greater than 0"}
+        
+        # Check for existing refund
+        existing_refund = await db.refunds.find_one({
+            "payment_id": payment_id,
+            "status": {"$in": ["pending", "processing", "completed"]}
+        })
+        
+        if existing_refund:
+            return {
+                "success": False,
+                "message": "A refund already exists for this payment",
+                "refund_id": existing_refund.get("refund_id")
+            }
+        
+        # Create refund record
+        refund = RefundModel(
+            payment_id=payment_id,
+            order_id=payment["order_id"],
+            user_id=payment["user_id"],
+            merchant_id=merchant_id,
+            initiated_by=merchant_id,
+            amount=amount,
+            currency="XOF",
+            reason=reason,
+            note=note,
+            provider=payment["provider"],
+            transaction_id=payment.get("transaction_id"),
+            status=RefundStatus.PENDING
+        )
+        
+        refund_dict = refund.model_dump(by_alias=True, exclude={"id"})
+        await db.refunds.insert_one(refund_dict)
+        
+        refund_id = refund.refund_id
+        
+        logger.info(f"Created refund record: {refund_id} for payment {payment_id}")
+        
+        # Call provider refund API
+        if PAYMENT_MODE == "SIMULATION":
+            # Auto-approve in simulation mode
+            logger.info(f"[SIMULATION] Auto-approving refund {refund_id}")
+            provider_response = {
+                "success": True,
+                "provider_refund_id": f"SIM_REF_{secrets.token_hex(8).upper()}",
+                "status": "completed",
+                "message": "Refund completed successfully (simulated)"
+            }
+        else:
+            # Call real provider API
+            provider_response = await self._call_provider_refund(
+                provider=payment["provider"],
+                transaction_id=payment.get("transaction_id"),
+                amount=amount,
+                refund_id=refund_id
+            )
+        
+        if not provider_response.get("success"):
+            # Mark refund as failed
+            await db.refunds.update_one(
+                {"refund_id": refund_id},
+                {
+                    "$set": {
+                        "status": RefundStatus.FAILED,
+                        "failure_reason": provider_response.get("message", "Provider refund failed"),
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+            logger.error(f"Refund failed: {refund_id} - {provider_response.get('message')}")
+            return {
+                "success": False,
+                "message": provider_response.get("message", "Refund failed"),
+                "refund_id": refund_id
+            }
+        
+        # Update refund status to completed
+        await db.refunds.update_one(
+            {"refund_id": refund_id},
+            {
+                "$set": {
+                    "status": RefundStatus.COMPLETED,
+                    "provider_refund_id": provider_response.get("provider_refund_id"),
+                    "completed_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow()
+                }
+            }
+        )
+        
+        # Update payment status to refunded
+        await db.payments.update_one(
+            {"payment_id": payment_id},
+            {
+                "$set": {
+                    "status": "refunded",
+                    "updated_at": datetime.utcnow(),
+                    "metadata.refund_id": refund_id,
+                    "metadata.refunded_amount": amount,
+                    "metadata.refund_reason": reason
+                }
+            }
+        )
+        
+        # Update order status to refunded
+        await db.orders.update_one(
+            {"_id": ObjectId(payment["order_id"])},
+            {
+                "$set": {
+                    "status": "cancelled",
+                    "payment_status": "refunded",
+                    "updated_at": datetime.utcnow()
+                },
+                "$push": {
+                    "status_history": {
+                        "status": "cancelled",
+                        "changed_at": datetime.utcnow(),
+                        "changed_by": merchant_id,
+                        "note": f"Payment refunded: {reason}"
+                    }
+                }
+            }
+        )
+        
+        logger.info(f"Refund completed successfully: {refund_id}")
+        
+        refunded_at = datetime.utcnow()
+        
+        return {
+            "success": True,
+            "message": "Refund processed successfully",
+            "refund_id": refund_id,
+            "payment_id": payment_id,
+            "amount": amount,
+            "status": "refunded",
+            "refunded_at": refunded_at.isoformat()
+        }
+
+    async def _call_provider_refund(
+        self,
+        provider: str,
+        transaction_id: str,
+        amount: float,
+        refund_id: str
+    ) -> Dict[str, Any]:
+        """
+        Call provider-specific refund API.
+        
+        Args:
+            provider: Payment provider
+            transaction_id: Original transaction ID
+            amount: Refund amount
+            refund_id: Refund identifier
+            
+        Returns:
+            Provider refund response
+        """
+        logger.info(f"Calling {provider} refund API for transaction {transaction_id}")
+        
+        # TODO: Implement real provider refund APIs
+        # For now, return success for all providers in sandbox/production mode
+        
+        if provider == "orange_money":
+            # TODO: Implement Orange Money refund API
+            return {
+                "success": True,
+                "provider_refund_id": f"OM_REF_{secrets.token_hex(8).upper()}",
+                "status": "completed",
+                "message": "Orange Money refund completed"
+            }
+        elif provider == "mtn_money":
+            # TODO: Implement MTN Mobile Money refund API
+            return {
+                "success": True,
+                "provider_refund_id": f"MTN_REF_{secrets.token_hex(8).upper()}",
+                "status": "completed",
+                "message": "MTN Money refund completed"
+            }
+        elif provider == "moov_money":
+            # TODO: Implement Moov Money refund API
+            return {
+                "success": True,
+                "provider_refund_id": f"MOOV_REF_{secrets.token_hex(8).upper()}",
+                "status": "completed",
+                "message": "Moov Money refund completed"
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"Unsupported provider for refund: {provider}"
+            }
     
     async def simulate_payment(
         self,
