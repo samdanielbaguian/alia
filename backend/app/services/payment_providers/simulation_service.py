@@ -77,22 +77,21 @@ class SimulationService:
         
         if auto_failure:
             logger.info(f"[SIMULATION] Auto-failure pattern detected for {phone_number}")
-            # Schedule automatic failure after 3 seconds
+            # Schedule automatic failure after delay
+            delay = 3
             asyncio.create_task(
                 SimulationService._auto_fail_payment(
                     payment_id=payment_id,
                     transaction_id=transaction_id,
-                    amount=amount,
-                    phone_number=phone_number,
                     provider=provider,
-                    delay_seconds=3
+                    delay_seconds=delay
                 )
             )
             return {
                 "success": True,
                 "transaction_id": transaction_id,
                 "status": "pending",
-                "message": f"Simulation: Payment will auto-fail in 3 seconds (magic number)",
+                "message": f"Simulation: Payment will auto-fail in {delay} seconds (magic number)",
                 "ussd_code": get_ussd_code(provider),
                 "provider": provider,
                 "simulation_mode": True,
@@ -114,8 +113,6 @@ class SimulationService:
                 SimulationService._auto_complete_payment(
                     payment_id=payment_id,
                     transaction_id=transaction_id,
-                    amount=amount,
-                    phone_number=phone_number,
                     provider=provider,
                     delay_seconds=simulation_config['auto_process_delay_seconds']
                 )
@@ -222,8 +219,6 @@ class SimulationService:
     async def _auto_complete_payment(
         payment_id: str,
         transaction_id: str,
-        amount: float,
-        phone_number: str,
         provider: str,
         delay_seconds: int = 5
     ):
@@ -235,8 +230,6 @@ class SimulationService:
         Args:
             payment_id: Payment identifier
             transaction_id: Simulated transaction ID
-            amount: Payment amount
-            phone_number: Customer phone number
             provider: Payment provider
             delay_seconds: Delay before auto-completion
         """
@@ -247,7 +240,6 @@ class SimulationService:
         try:
             # Import here to avoid circular dependencies
             from app.core.database import get_database
-            from datetime import datetime
             
             db = get_database()
             
@@ -303,8 +295,6 @@ class SimulationService:
     async def _auto_fail_payment(
         payment_id: str,
         transaction_id: str,
-        amount: float,
-        phone_number: str,
         provider: str,
         delay_seconds: int = 3
     ):
@@ -315,10 +305,8 @@ class SimulationService:
         
         Args:
             payment_id: Payment identifier
-            transaction_id: Simulated transaction ID
-            amount: Payment amount
-            phone_number: Customer phone number
-            provider: Payment provider
+            transaction_id: Simulated transaction ID (unused but kept for symmetry with _auto_complete_payment)
+            provider: Payment provider (unused but kept for future extensibility)
             delay_seconds: Delay before auto-failure
         """
         logger.info(f"[SIMULATION] Scheduling auto-fail for payment {payment_id} in {delay_seconds}s")
@@ -328,7 +316,6 @@ class SimulationService:
         try:
             # Import here to avoid circular dependencies
             from app.core.database import get_database
-            from datetime import datetime
             
             db = get_database()
             
