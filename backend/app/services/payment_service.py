@@ -204,7 +204,8 @@ class PaymentService:
                 amount=amount,
                 phone_number=phone_number,
                 order_id=order_id,
-                payment_id=payment_id
+                payment_id=payment_id,
+                provider=provider
             )
         
         # Call real provider APIs in SANDBOX or PRODUCTION mode
