@@ -87,3 +87,114 @@ class TestSimulationServiceProviderHandling:
         assert result["auto_success"] is True
         assert result["provider"] == "mtn_money"
         assert "MTN_MONEY" in result["message"]
+
+
+class TestSimulationServiceMagicNumbers:
+    """Test magic number automation for payment simulation."""
+    
+    @pytest.mark.asyncio
+    async def test_magic_number_auto_success(self):
+        """Test that magic number +2250777123456 triggers auto-success."""
+        result = await SimulationService.initiate_payment(
+            amount=50000.0,
+            phone_number="+2250777123456",
+            order_id="test_order_magic_success",
+            payment_id="test_payment_magic_success",
+            provider="orange_money"
+        )
+        
+        assert result["success"] is True
+        assert result["status"] == "pending"
+        assert result["auto_success"] is True
+        assert "auto-complete" in result["message"].lower()
+        assert result["provider"] == "orange_money"
+        assert result["simulation_mode"] is True
+    
+    @pytest.mark.asyncio
+    async def test_magic_number_auto_failure(self):
+        """Test that magic number +2250777123458 triggers auto-failure."""
+        result = await SimulationService.initiate_payment(
+            amount=50000.0,
+            phone_number="+2250777123458",
+            order_id="test_order_magic_fail",
+            payment_id="test_payment_magic_fail",
+            provider="mtn_money"
+        )
+        
+        assert result["success"] is True
+        assert result["status"] == "pending"
+        assert result.get("auto_failure") is True
+        assert "auto-fail" in result["message"].lower()
+        assert result["provider"] == "mtn_money"
+        assert result["simulation_mode"] is True
+    
+    @pytest.mark.asyncio
+    async def test_magic_number_pending(self):
+        """Test that magic number +2250777123457 stays pending."""
+        result = await SimulationService.initiate_payment(
+            amount=50000.0,
+            phone_number="+2250777123457",
+            order_id="test_order_magic_pending",
+            payment_id="test_payment_magic_pending",
+            provider="moov_money"
+        )
+        
+        assert result["success"] is True
+        assert result["status"] == "pending"
+        assert result.get("auto_success") is False
+        # auto_failure field is not present when False, so check it's not True
+        assert result.get("auto_failure") is not True
+        assert "veuillez composer" in result["message"].lower()
+        assert result["provider"] == "moov_money"
+    
+    @pytest.mark.asyncio
+    async def test_non_magic_number_normal_behavior(self):
+        """Test that non-magic numbers behave normally."""
+        # Use a number that doesn't end in 0000 or 9999
+        result = await SimulationService.initiate_payment(
+            amount=50000.0,
+            phone_number="+2250707888888",
+            order_id="test_order_normal",
+            payment_id="test_payment_normal",
+            provider="orange_money"
+        )
+        
+        assert result["success"] is True
+        assert result["status"] == "pending"
+        # Should not auto-success (doesn't match magic number or 0000 pattern)
+        assert result.get("auto_success") is False
+        # Should not auto-fail (doesn't match magic number or 9999 pattern)
+        assert result.get("auto_failure") is not True
+        assert "veuillez composer" in result["message"].lower()
+    
+    @pytest.mark.asyncio
+    async def test_old_pattern_still_works_0000(self):
+        """Test that old pattern (ending in 0000) still works for auto-success."""
+        result = await SimulationService.initiate_payment(
+            amount=1000.0,
+            phone_number="+2250707000000",  # Ends in 0000
+            order_id="test_order_old_success",
+            payment_id="test_payment_old_success",
+            provider="orange_money"
+        )
+        
+        assert result["success"] is True
+        assert result["auto_success"] is True
+        assert "auto-complete" in result["message"].lower()
+    
+    @pytest.mark.asyncio
+    async def test_old_pattern_still_works_9999(self):
+        """Test that old pattern (ending in 9999) still works for auto-failure."""
+        result = await SimulationService.initiate_payment(
+            amount=1000.0,
+            phone_number="+2250707999999",  # Ends in 9999
+            order_id="test_order_old_fail",
+            payment_id="test_payment_old_fail",
+            provider="orange_money"
+        )
+        
+        assert result["success"] is True
+        assert result["status"] == "pending"
+        assert result.get("auto_failure") is True
+        assert "auto-fail" in result["message"].lower()
+
