@@ -138,30 +138,38 @@ class RefundRequest(BaseModel):
     """Schema for refund request."""
     reason: str
     amount: Optional[float] = None  # Optional for partial refund
+    note: Optional[str] = None  # Optional note
     
     class Config:
         json_schema_extra = {
             "example": {
                 "reason": "Product out of stock",
-                "amount": 92000
+                "amount": 92000,
+                "note": "Product was defective"
             }
         }
 
 
 class RefundResponse(BaseModel):
     """Schema for refund response."""
+    success: bool
     message: str
     refund_id: str
-    status: str
+    payment_id: str
     amount: float
+    status: str
+    refunded_at: Optional[str] = None
     
     class Config:
         json_schema_extra = {
             "example": {
-                "message": "Refund initiated",
+                "success": True,
+                "message": "Refund processed successfully",
                 "refund_id": "ref_xyz789",
-                "status": "processing",
-                "amount": 92000
+                "payment_id": "pay_abc123",
+                "amount": 92000,
+                "status": "refunded",
+                "refunded_at": "2025-12-31T05:30:00Z"
             }
         }
 
