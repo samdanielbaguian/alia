@@ -2,10 +2,11 @@ from typing import Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
+from datetime import datetime
 
 from app.api.deps import get_db, get_current_user, get_current_merchant
 from app.schemas.share import MerchantShareResponse
-from app.schemas.order import OrderResponse, OrderProductResponse, StatusHistoryResponse
+from app.schemas.order import OrderResponse, OrderProductResponse, StatusHistoryResponse, SalesHeatmapResponse, HeatmapZone
 from app.services.share_service import ShareService
 from app.services.order_service import OrderService
 
@@ -349,3 +350,114 @@ async def get_merchant_orders(
         "limit": limit,
         "offset": offset
     }
+
+
+@router.get("/me/sales/heatmap", response_model=SalesHeatmapResponse)
+async def get_sales_heatmap(
+    from_date: Optional[str] = Query(None, alias="from", description="Start date (ISO format)"),
+    to_date: Optional[str] = Query(None, alias="to", description="End date (ISO format)"),
+    current_user: dict = Depends(get_current_merchant),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Get sales heatmap for merchant dashboard.
+    
+    Returns zones (cities, regions) where sales are most active,
+    with location data for displaying on a map.
+    
+    Query params:
+    - from: Start date in ISO format (optional)
+    - to: End date in ISO format (optional)
+    
+    Returns:
+    - heatmap: List of zones with order counts and sales totals
+    - top_zone: Zone with the highest number of orders
+    """
+    user_id = str(current_user["_id"])
+    
+    # Build filter query
+    filter_query = {"merchant_id": user_id}
+    
+    # Add date filtering if provided
+    if from_date or to_date:
+        date_filter = {}
+        if from_date:
+            try:
+                date_filter["$gte"] = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid 'from' date format. Use ISO format (e.g., 2024-01-01T00:00:00Z)"
+                )
+        if to_date:
+            try:
+                date_filter["$lte"] = datetime.fromisoformat(to_date.replace('Z', '+00:00'))
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid 'to' date format. Use ISO format (e.g., 2024-12-31T23:59:59Z)"
+                )
+        if date_filter:
+            filter_query["created_at"] = date_filter
+    
+    # Get orders for this merchant
+    orders = await db.orders.find(filter_query).to_list(length=None)
+    
+    # Group orders by location (from user data)
+    location_map = {}
+    
+    for order in orders:
+        # Get user location
+        user = await db.users.find_one({"_id": order["user_id"]})
+        
+        if not user or not user.get("location"):
+            # Skip orders without location data
+            continue
+        
+        location = user["location"]
+        lat = location.get("lat")
+        lng = location.get("lng")
+        
+        if lat is None or lng is None:
+            continue
+        
+        # Create a key for grouping (round to 2 decimal places for nearby locations)
+        # This groups locations within ~1km of each other
+        location_key = (round(lat, 2), round(lng, 2))
+        
+        if location_key not in location_map:
+            location_map[location_key] = {
+                "lat": lat,
+                "lng": lng,
+                "orders": 0,
+                "total_sales": 0.0,
+                "city": None,  # We don't have city data yet
+                "region": None  # We don't have region data yet
+            }
+        
+        location_map[location_key]["orders"] += 1
+        location_map[location_key]["total_sales"] += order["total_amount"]
+    
+    # Convert to list of HeatmapZone objects
+    heatmap_zones = [
+        HeatmapZone(
+            city=zone_data["city"],
+            region=zone_data["region"],
+            orders=zone_data["orders"],
+            total_sales=zone_data["total_sales"],
+            lat=zone_data["lat"],
+            lng=zone_data["lng"]
+        )
+        for zone_data in location_map.values()
+    ]
+    
+    # Sort by order count descending
+    heatmap_zones.sort(key=lambda x: x.orders, reverse=True)
+    
+    # Find top zone (highest order count)
+    top_zone = heatmap_zones[0] if heatmap_zones else None
+    
+    return SalesHeatmapResponse(
+        heatmap=heatmap_zones,
+        top_zone=top_zone
+    )
