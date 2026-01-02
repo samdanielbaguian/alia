@@ -65,20 +65,20 @@ async def test_sales_heatmap_with_orders():
     ]
     
     # Mock users with locations
-    mock_users = {
-        "user_1": {
+    mock_users_list = [
+        {
             "_id": "user_1",
             "location": {"lat": 5.3556, "lng": -3.9907}  # Abidjan
         },
-        "user_2": {
+        {
             "_id": "user_2",
             "location": {"lat": 7.6833, "lng": -5.0167}  # Bouaké
         }
-    }
+    ]
     
     db = MagicMock()
     db.orders.find.return_value.to_list = AsyncMock(return_value=mock_orders)
-    db.users.find_one = AsyncMock(side_effect=lambda query: mock_users.get(query["_id"]))
+    db.users.find.return_value.to_list = AsyncMock(return_value=mock_users_list)
     
     # Call the endpoint
     result = await get_sales_heatmap(
@@ -134,20 +134,20 @@ async def test_sales_heatmap_skip_orders_without_location():
     ]
     
     # Mock users - user_1 has location, user_2 doesn't
-    mock_users = {
-        "user_1": {
+    mock_users_list = [
+        {
             "_id": "user_1",
             "location": {"lat": 5.3556, "lng": -3.9907}
         },
-        "user_2": {
-            "_id": "user_2"
+        {
+            "_id": "user_2",
             # No location
         }
-    }
+    ]
     
     db = MagicMock()
     db.orders.find.return_value.to_list = AsyncMock(return_value=mock_orders)
-    db.users.find_one = AsyncMock(side_effect=lambda query: mock_users.get(query["_id"]))
+    db.users.find.return_value.to_list = AsyncMock(return_value=mock_users_list)
     
     # Call the endpoint
     result = await get_sales_heatmap(

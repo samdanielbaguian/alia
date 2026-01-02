@@ -403,12 +403,27 @@ async def get_sales_heatmap(
     # Get orders for this merchant
     orders = await db.orders.find(filter_query).to_list(length=None)
     
+    if not orders:
+        # No orders, return empty heatmap
+        return SalesHeatmapResponse(heatmap=[], top_zone=None)
+    
+    # Collect unique user IDs from orders
+    user_ids = list(set(order["user_id"] for order in orders))
+    
+    # Fetch all users in a single query
+    users_cursor = db.users.find({"_id": {"$in": user_ids}})
+    users_list = await users_cursor.to_list(length=None)
+    
+    # Create a user map for quick lookup
+    users_map = {str(user["_id"]): user for user in users_list}
+    
     # Group orders by location (from user data)
     location_map = {}
     
     for order in orders:
-        # Get user location
-        user = await db.users.find_one({"_id": order["user_id"]})
+        # Get user location from the user map
+        user_id = str(order["user_id"])
+        user = users_map.get(user_id)
         
         if not user or not user.get("location"):
             # Skip orders without location data
