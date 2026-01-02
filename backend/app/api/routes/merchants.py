@@ -1,5 +1,6 @@
 from typing import Dict, Optional
 from datetime import datetime, date
+import calendar
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
@@ -383,13 +384,9 @@ async def get_dashboard_overview(
     if not from_date:
         from_date = date(now.year, now.month, 1)
     if not to_date:
-        # Last day of current month
-        if now.month == 12:
-            to_date = date(now.year, 12, 31)
-        else:
-            to_date = date(now.year, now.month + 1, 1)
-            # Subtract one day to get last day of current month
-            to_date = date(to_date.year, to_date.month, to_date.day - 1) if to_date.day > 1 else date(to_date.year, to_date.month - 1, 31)
+        # Last day of current month using calendar module
+        last_day = calendar.monthrange(now.year, now.month)[1]
+        to_date = date(now.year, now.month, last_day)
     
     # Convert dates to datetime for MongoDB queries
     start_datetime = datetime.combine(from_date, datetime.min.time())
@@ -428,6 +425,7 @@ async def get_dashboard_overview(
                     "$sum": {"$cond": [{"$eq": ["$status", "delivered"]}, 1, 0]}
                 },
                 "orders_canceled": {
+                    # Note: Status in DB is "cancelled" (British), but response field is "canceled" (American) per spec
                     "$sum": {"$cond": [{"$eq": ["$status", "cancelled"]}, 1, 0]}
                 },
                 "unique_customers": {"$addToSet": "$user_id"}
