@@ -1,4 +1,5 @@
 from typing import Dict, Optional
+from datetime import datetime, date
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
@@ -6,6 +7,7 @@ from bson import ObjectId
 from app.api.deps import get_db, get_current_user, get_current_merchant
 from app.schemas.share import MerchantShareResponse
 from app.schemas.order import OrderResponse, OrderProductResponse, StatusHistoryResponse
+from app.schemas.dashboard import DashboardOverviewResponse, DashboardPeriod
 from app.services.share_service import ShareService
 from app.services.order_service import OrderService
 
@@ -349,3 +351,200 @@ async def get_merchant_orders(
         "limit": limit,
         "offset": offset
     }
+
+
+@router.get("/me/dashboard-overview", response_model=DashboardOverviewResponse)
+async def get_dashboard_overview(
+    from_date: Optional[date] = Query(None, alias="from", description="Start date (YYYY-MM-DD)"),
+    to_date: Optional[date] = Query(None, alias="to", description="End date (YYYY-MM-DD)"),
+    current_user: dict = Depends(get_current_merchant),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Get merchant dashboard overview with activity summary for a given period.
+    
+    Returns comprehensive analytics including:
+    - Total sales (completed orders)
+    - Orders count and status breakdown
+    - Refunds information
+    - New customers
+    - Stock information
+    
+    Query params:
+    - from: Start date (YYYY-MM-DD), defaults to first day of current month
+    - to: End date (YYYY-MM-DD), defaults to last day of current month
+    
+    Requires merchant authentication.
+    """
+    user_id = str(current_user["_id"])
+    
+    # Set default period to current month if not provided
+    now = datetime.utcnow()
+    if not from_date:
+        from_date = date(now.year, now.month, 1)
+    if not to_date:
+        # Last day of current month
+        if now.month == 12:
+            to_date = date(now.year, 12, 31)
+        else:
+            to_date = date(now.year, now.month + 1, 1)
+            # Subtract one day to get last day of current month
+            to_date = date(to_date.year, to_date.month, to_date.day - 1) if to_date.day > 1 else date(to_date.year, to_date.month - 1, 31)
+    
+    # Convert dates to datetime for MongoDB queries
+    start_datetime = datetime.combine(from_date, datetime.min.time())
+    end_datetime = datetime.combine(to_date, datetime.max.time())
+    
+    # Get merchant profile
+    merchant = await db.merchants.find_one({"user_id": user_id})
+    if not merchant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Merchant profile not found"
+        )
+    
+    # Build aggregation pipeline for orders
+    orders_pipeline = [
+        {
+            "$match": {
+                "merchant_id": user_id,
+                "created_at": {"$gte": start_datetime, "$lte": end_datetime}
+            }
+        },
+        {
+            "$group": {
+                "_id": None,
+                "total_orders": {"$sum": 1},
+                "orders_pending": {
+                    "$sum": {"$cond": [{"$eq": ["$status", "pending"]}, 1, 0]}
+                },
+                "orders_confirmed": {
+                    "$sum": {"$cond": [{"$eq": ["$status", "confirmed"]}, 1, 0]}
+                },
+                "orders_shipped": {
+                    "$sum": {"$cond": [{"$eq": ["$status", "shipped"]}, 1, 0]}
+                },
+                "orders_delivered": {
+                    "$sum": {"$cond": [{"$eq": ["$status", "delivered"]}, 1, 0]}
+                },
+                "orders_canceled": {
+                    "$sum": {"$cond": [{"$eq": ["$status", "cancelled"]}, 1, 0]}
+                },
+                "unique_customers": {"$addToSet": "$user_id"}
+            }
+        }
+    ]
+    
+    orders_result = await db.orders.aggregate(orders_pipeline).to_list(length=1)
+    orders_stats = orders_result[0] if orders_result else {
+        "total_orders": 0,
+        "orders_pending": 0,
+        "orders_confirmed": 0,
+        "orders_shipped": 0,
+        "orders_delivered": 0,
+        "orders_canceled": 0,
+        "unique_customers": []
+    }
+    
+    # Calculate total sales from completed payments (status: completed)
+    payments_pipeline = [
+        {
+            "$match": {
+                "merchant_id": user_id,
+                "status": "completed",
+                "initiated_at": {"$gte": start_datetime, "$lte": end_datetime}
+            }
+        },
+        {
+            "$group": {
+                "_id": None,
+                "total_sales": {"$sum": "$amount"}
+            }
+        }
+    ]
+    
+    payments_result = await db.payments.aggregate(payments_pipeline).to_list(length=1)
+    total_sales = payments_result[0]["total_sales"] if payments_result else 0.0
+    
+    # Get refunds information
+    refunds_pipeline = [
+        {
+            "$match": {
+                "merchant_id": user_id,
+                "created_at": {"$gte": start_datetime, "$lte": end_datetime}
+            }
+        },
+        {
+            "$group": {
+                "_id": None,
+                "refunds_count": {"$sum": 1},
+                "refunds_total": {"$sum": "$amount"}
+            }
+        }
+    ]
+    
+    refunds_result = await db.refunds.aggregate(refunds_pipeline).to_list(length=1)
+    refunds_stats = refunds_result[0] if refunds_result else {
+        "refunds_count": 0,
+        "refunds_total": 0.0
+    }
+    
+    # Count orders with refunded status
+    orders_refunded = await db.orders.count_documents({
+        "merchant_id": user_id,
+        "created_at": {"$gte": start_datetime, "$lte": end_datetime},
+        "status": "refunded"
+    })
+    
+    # Get new customers (users who made their first order in this period)
+    # Find all customers who ordered in the period
+    customer_ids = orders_stats.get("unique_customers", [])
+    
+    # For each customer, check if they have orders before the period start
+    new_customers_count = 0
+    for customer_id in customer_ids:
+        # Check if this is their first order
+        first_order = await db.orders.find_one(
+            {"user_id": customer_id},
+            sort=[("created_at", 1)]
+        )
+        if first_order and first_order["created_at"] >= start_datetime:
+            new_customers_count += 1
+    
+    # Get product stock information
+    products_pipeline = [
+        {
+            "$match": {"merchant_id": user_id}
+        },
+        {
+            "$group": {
+                "_id": None,
+                "products_in_stock": {
+                    "$sum": {"$cond": [{"$gt": ["$stock", 0]}, 1, 0]}
+                },
+                "low_stock": {
+                    "$sum": {"$cond": [{"$and": [{"$gt": ["$stock", 0]}, {"$lte": ["$stock", 5]}]}, 1, 0]}
+                }
+            }
+        }
+    ]
+    
+    products_result = await db.products.aggregate(products_pipeline).to_list(length=1)
+    products_stats = products_result[0] if products_result else {
+        "products_in_stock": 0,
+        "low_stock": 0
+    }
+    
+    return DashboardOverviewResponse(
+        total_sales=total_sales,
+        orders_count=orders_stats["total_orders"],
+        orders_pending=orders_stats["orders_pending"],
+        orders_shipped=orders_stats["orders_shipped"],
+        orders_canceled=orders_stats["orders_canceled"],
+        orders_refunded=orders_refunded,
+        refunds_total=refunds_stats["refunds_total"],
+        new_customers=new_customers_count,
+        products_in_stock=products_stats["products_in_stock"],
+        low_stock=products_stats["low_stock"],
+        period=DashboardPeriod(**{"from": from_date, "to": to_date})
+    )
