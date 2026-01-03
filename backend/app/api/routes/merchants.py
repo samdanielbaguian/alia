@@ -4,7 +4,6 @@ import calendar
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
-from datetime import datetime
 
 from app.api.deps import get_db, get_current_user, get_current_merchant
 from app.schemas.share import MerchantShareResponse
@@ -758,17 +757,26 @@ async def get_bestsellers(
         reverse=True
     )[:limit]
     
-    # Get product images from database
+    # Batch fetch product details to avoid N+1 queries
+    product_ids = []
+    for pd in top_products_data:
+        try:
+            product_ids.append(ObjectId(pd["product_id"]))
+        except Exception:
+            # If product_id is not a valid ObjectId, skip
+            pass
+    
+    # Fetch all products in a single query
+    products_cursor = db.products.find({"_id": {"$in": product_ids}})
+    products = await products_cursor.to_list(length=len(product_ids))
+    
+    # Create a lookup map for quick access
+    products_map = {str(p["_id"]): p for p in products}
+    
+    # Build top products list with images
     top_products = []
     for pd in top_products_data:
-        # Try to get product details for image
-        product = None
-        try:
-            product = await db.products.find_one({"_id": ObjectId(pd["product_id"])})
-        except Exception:
-            # If product_id is not a valid ObjectId, skip image lookup
-            pass
-        
+        product = products_map.get(pd["product_id"])
         image_url = None
         if product and product.get("images"):
             image_url = product["images"][0] if isinstance(product["images"], list) else product["images"]
@@ -782,16 +790,10 @@ async def get_bestsellers(
             image_url=image_url
         ))
     
-    # Aggregate category sales
+    # Aggregate category sales using the same products map
     category_sales = {}
     for product_id, ps in product_sales.items():
-        # Get product category
-        product = None
-        try:
-            product = await db.products.find_one({"_id": ObjectId(product_id)})
-        except Exception:
-            # If product_id is not a valid ObjectId, use Uncategorized
-            pass
+        product = products_map.get(product_id)
         
         if product:
             category = product.get("category", "Uncategorized")
@@ -995,9 +997,23 @@ async def get_recent_activity(
             "merchant_id": user_id
         }).sort("created_at", -1).limit(limit).to_list(length=limit)
         
+        # Batch fetch customer information to avoid N+1 queries
+        customer_ids = []
         for order in recent_orders:
-            # Get customer info
-            customer = await db.users.find_one({"_id": ObjectId(order["user_id"])}) if ObjectId.is_valid(order["user_id"]) else None
+            if ObjectId.is_valid(order["user_id"]):
+                try:
+                    customer_ids.append(ObjectId(order["user_id"]))
+                except Exception:
+                    pass
+        
+        # Fetch all customers in a single query
+        customers_cursor = db.users.find({"_id": {"$in": customer_ids}})
+        customers = await customers_cursor.to_list(length=len(customer_ids))
+        customers_map = {str(c["_id"]): c for c in customers}
+        
+        for order in recent_orders:
+            # Get customer info from map
+            customer = customers_map.get(order["user_id"])
             customer_name = customer.get("username", "Unknown") if customer else "Unknown"
             
             activities.append(ActivityItem(

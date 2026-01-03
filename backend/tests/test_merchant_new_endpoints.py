@@ -172,26 +172,10 @@ class TestBestsellers:
         ])
         mock_db.orders.find = MagicMock(return_value=mock_orders_cursor)
         
-        # Mock product lookup
-        async def mock_find_one_product(query):
-            product_id = str(query["_id"])
-            if "prod1" in product_id:
-                return {
-                    "_id": ObjectId(),
-                    "title": "Product 1",
-                    "category": "Electronics",
-                    "images": ["http://example.com/image1.jpg"]
-                }
-            elif "prod2" in product_id:
-                return {
-                    "_id": ObjectId(),
-                    "title": "Product 2",
-                    "category": "Electronics",
-                    "images": ["http://example.com/image2.jpg"]
-                }
-            return None
-        
-        mock_db.products.find_one = AsyncMock(side_effect=mock_find_one_product)
+        # Mock batch product lookup
+        mock_products_cursor = MagicMock()
+        mock_products_cursor.to_list = AsyncMock(return_value=[])  # No products found (edge case test)
+        mock_db.products.find = MagicMock(return_value=mock_products_cursor)
         
         # Mock current user
         mock_current_user = {
@@ -320,11 +304,15 @@ class TestRecentActivity:
         ])
         mock_db.orders.find = MagicMock(return_value=mock_orders_cursor)
         
-        # Mock user lookup
-        mock_db.users.find_one = AsyncMock(return_value={
-            "_id": ObjectId(),
-            "username": "John Doe"
-        })
+        # Mock batch user lookup
+        mock_users_cursor = MagicMock()
+        mock_users_cursor.to_list = AsyncMock(return_value=[
+            {
+                "_id": ObjectId(),
+                "username": "John Doe"
+            }
+        ])
+        mock_db.users.find = MagicMock(return_value=mock_users_cursor)
         
         # Mock refunds cursor (empty)
         mock_refunds_cursor = MagicMock()
