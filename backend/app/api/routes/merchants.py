@@ -4,6 +4,7 @@ import calendar
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
+from bson.errors import InvalidId
 
 from app.api.deps import get_db, get_current_user, get_current_merchant
 from app.schemas.share import MerchantShareResponse
@@ -762,7 +763,7 @@ async def get_bestsellers(
     for pd in top_products_data:
         try:
             product_ids.append(ObjectId(pd["product_id"]))
-        except Exception:
+        except (InvalidId, ValueError, TypeError):
             # If product_id is not a valid ObjectId, skip
             pass
     
@@ -1003,7 +1004,7 @@ async def get_recent_activity(
             if ObjectId.is_valid(order["user_id"]):
                 try:
                     customer_ids.append(ObjectId(order["user_id"]))
-                except Exception:
+                except (InvalidId, ValueError, TypeError):
                     pass
         
         # Fetch all customers in a single query
