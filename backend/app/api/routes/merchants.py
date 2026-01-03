@@ -761,7 +761,14 @@ async def get_bestsellers(
     # Get product images from database
     top_products = []
     for pd in top_products_data:
-        product = await db.products.find_one({"_id": ObjectId(pd["product_id"])})
+        # Try to get product details for image
+        product = None
+        try:
+            product = await db.products.find_one({"_id": ObjectId(pd["product_id"])})
+        except Exception:
+            # If product_id is not a valid ObjectId, skip image lookup
+            pass
+        
         image_url = None
         if product and product.get("images"):
             image_url = product["images"][0] if isinstance(product["images"], list) else product["images"]
@@ -779,19 +786,28 @@ async def get_bestsellers(
     category_sales = {}
     for product_id, ps in product_sales.items():
         # Get product category
-        product = await db.products.find_one({"_id": ObjectId(product_id)})
+        product = None
+        try:
+            product = await db.products.find_one({"_id": ObjectId(product_id)})
+        except Exception:
+            # If product_id is not a valid ObjectId, use Uncategorized
+            pass
+        
         if product:
             category = product.get("category", "Uncategorized")
-            if category not in category_sales:
-                category_sales[category] = {
-                    "category": category,
-                    "quantity_sold": 0,
-                    "revenue": 0.0,
-                    "products": set()
-                }
-            category_sales[category]["quantity_sold"] += ps["quantity_sold"]
-            category_sales[category]["revenue"] += ps["revenue"]
-            category_sales[category]["products"].add(product_id)
+        else:
+            category = "Uncategorized"
+        
+        if category not in category_sales:
+            category_sales[category] = {
+                "category": category,
+                "quantity_sold": 0,
+                "revenue": 0.0,
+                "products": set()
+            }
+        category_sales[category]["quantity_sold"] += ps["quantity_sold"]
+        category_sales[category]["revenue"] += ps["revenue"]
+        category_sales[category]["products"].add(product_id)
     
     # Convert to list and add products_count
     for cs in category_sales.values():
