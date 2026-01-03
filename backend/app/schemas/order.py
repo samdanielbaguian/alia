@@ -139,3 +139,19 @@ class OrderHistoryResponse(BaseModel):
     order_id: str
     current_status: str
     history: List[StatusHistoryResponse]
+
+
+class HeatmapZone(BaseModel):
+    """Schema for a single heatmap zone with sales data."""
+    city: Optional[str] = None
+    region: Optional[str] = None
+    orders: int
+    total_sales: float
+    lat: float
+    lng: float
+
+
+class SalesHeatmapResponse(BaseModel):
+    """Schema for sales heatmap response."""
+    heatmap: List[HeatmapZone]
+    top_zone: Optional[HeatmapZone] = None

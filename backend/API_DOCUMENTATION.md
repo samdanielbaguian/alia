@@ -44,6 +44,7 @@ Authorization: Bearer <your_jwt_token>
 - `GET /api/merchants/{id}/dashboard` - Get dashboard analytics (merchant only)
 - `GET /api/merchants/me/dashboard-overview` - Get dashboard overview with period filter (merchant only)
 - `GET /api/merchants/me/orders` - Get merchant orders with pagination (merchant only)
+- `GET /api/merchants/me/sales/heatmap` - Get sales heatmap (merchant only)
 
 ### AliExpress Integration
 - `POST /api/aliexpress/search` - Search AliExpress products (merchant only)
@@ -488,6 +489,94 @@ All endpoints may return error responses in the following format:
 ```json
 {
   "detail": "Internal server error"
+}
+```
+
+---
+
+### GET /api/merchants/me/sales/heatmap
+
+Get sales heatmap data for merchant dashboard showing zones where sales are most active.
+
+**Authentication:** Merchant only (Bearer token required)
+
+**Query Parameters:**
+- `from` (optional): Start date in ISO format (e.g., `2024-01-01T00:00:00Z`)
+- `to` (optional): End date in ISO format (e.g., `2024-12-31T23:59:59Z`)
+
+**Example Request:**
+```bash
+curl -X GET "http://localhost:8000/api/merchants/me/sales/heatmap?from=2024-01-01T00:00:00Z&to=2024-12-31T23:59:59Z" \
+  -H "Authorization: Bearer <merchant_token>"
+```
+
+**Response:**
+```json
+{
+  "heatmap": [
+    {
+      "city": null,
+      "region": null,
+      "orders": 33,
+      "total_sales": 1580000.0,
+      "lat": 5.36,
+      "lng": -3.99
+    },
+    {
+      "city": null,
+      "region": null,
+      "orders": 12,
+      "total_sales": 480000.0,
+      "lat": 7.68,
+      "lng": -5.02
+    }
+  ],
+  "top_zone": {
+    "city": null,
+    "region": null,
+    "orders": 33,
+    "total_sales": 1580000.0,
+    "lat": 5.36,
+    "lng": -3.99
+  }
+}
+```
+
+**Response Fields:**
+- `heatmap`: Array of zones with sales data, sorted by order count (descending)
+  - `city`: City name (currently null, will be populated when order shipping address is added)
+  - `region`: Region/district name (currently null, will be populated when order shipping address is added)
+  - `orders`: Number of orders in this zone
+  - `total_sales`: Total sales amount in this zone
+  - `lat`: Latitude for map display
+  - `lng`: Longitude for map display
+- `top_zone`: Zone with the highest number of orders (null if no orders)
+
+**Notes:**
+- Orders are grouped by customer location (rounded to 2 decimal places for nearby locations)
+- Orders without location data are excluded from the heatmap
+- The endpoint currently uses buyer location; future updates will use shipping address from orders
+
+**Error Responses:**
+
+**400 Bad Request (Invalid date format):**
+```json
+{
+  "detail": "Invalid 'from' date format. Use ISO format (e.g., 2024-01-01T00:00:00Z)"
+}
+```
+
+**401 Unauthorized:**
+```json
+{
+  "detail": "Could not validate credentials"
+}
+```
+
+**403 Forbidden:**
+```json
+{
+  "detail": "Only merchants can access this endpoint"
 }
 ```
 
