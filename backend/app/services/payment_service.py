@@ -86,7 +86,7 @@ class PaymentService:
         
         if existing_payment:
             # Check if it's expired
-            if existing_payment["expires_at"] > datetime.utcnow():
+            if existing_payment:
                 return {
                     "success": False,
                     "message": "A pending payment already exists for this order",

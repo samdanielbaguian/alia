@@ -42,6 +42,9 @@ Authorization: Bearer <your_jwt_token>
 - `GET /api/merchants/{id}` - Get merchant profile
 - `PUT /api/merchants/{id}` - Update merchant profile (merchant only)
 - `GET /api/merchants/{id}/dashboard` - Get dashboard analytics (merchant only)
+- `GET /api/merchants/me/dashboard-overview` - Get dashboard overview with period filter (merchant only)
+- `GET /api/merchants/me/orders` - Get merchant orders with pagination (merchant only)
+- `GET /api/merchants/me/sales/heatmap` - Get sales heatmap (merchant only)
 
 ### AliExpress Integration
 - `POST /api/aliexpress/search` - Search AliExpress products (merchant only)
@@ -305,6 +308,59 @@ Authorization: Bearer <merchant_token>
 
 ---
 
+### GET /api/merchants/me/dashboard-overview
+
+Get merchant dashboard overview with activity summary for a given period (merchant only).
+
+**Headers:**
+```
+Authorization: Bearer <merchant_token>
+```
+
+**Query Parameters:**
+- `from` (optional): Start date in YYYY-MM-DD format (default: first day of current month)
+- `to` (optional): End date in YYYY-MM-DD format (default: last day of current month)
+
+**Example Request:**
+```bash
+GET /api/merchants/me/dashboard-overview?from=2026-01-01&to=2026-01-31
+```
+
+**Response:**
+```json
+{
+  "total_sales": 4590000,
+  "orders_count": 133,
+  "orders_pending": 11,
+  "orders_shipped": 72,
+  "orders_canceled": 10,
+  "orders_refunded": 5,
+  "refunds_total": 86000,
+  "new_customers": 23,
+  "products_in_stock": 78,
+  "low_stock": 5,
+  "period": {
+    "from": "2026-01-01",
+    "to": "2026-01-31"
+  }
+}
+```
+
+**Response Fields:**
+- `total_sales`: Total sales amount in XOF from completed payments
+- `orders_count`: Total number of orders in the period
+- `orders_pending`: Number of orders with pending status
+- `orders_shipped`: Number of orders with shipped status
+- `orders_canceled`: Number of orders with canceled status
+- `orders_refunded`: Number of orders with refunded status
+- `refunds_total`: Total refund amount in XOF
+- `new_customers`: Number of customers who made their first order in this period
+- `products_in_stock`: Number of products currently in stock (stock > 0)
+- `low_stock`: Number of products with low stock (0 < stock <= 5)
+- `period`: The date range for which the data is calculated
+
+---
+
 ### POST /api/aliexpress/import
 
 Import a product from AliExpress/Alibaba (merchant only).
@@ -433,6 +489,94 @@ All endpoints may return error responses in the following format:
 ```json
 {
   "detail": "Internal server error"
+}
+```
+
+---
+
+### GET /api/merchants/me/sales/heatmap
+
+Get sales heatmap data for merchant dashboard showing zones where sales are most active.
+
+**Authentication:** Merchant only (Bearer token required)
+
+**Query Parameters:**
+- `from` (optional): Start date in ISO format (e.g., `2024-01-01T00:00:00Z`)
+- `to` (optional): End date in ISO format (e.g., `2024-12-31T23:59:59Z`)
+
+**Example Request:**
+```bash
+curl -X GET "http://localhost:8000/api/merchants/me/sales/heatmap?from=2024-01-01T00:00:00Z&to=2024-12-31T23:59:59Z" \
+  -H "Authorization: Bearer <merchant_token>"
+```
+
+**Response:**
+```json
+{
+  "heatmap": [
+    {
+      "city": null,
+      "region": null,
+      "orders": 33,
+      "total_sales": 1580000.0,
+      "lat": 5.36,
+      "lng": -3.99
+    },
+    {
+      "city": null,
+      "region": null,
+      "orders": 12,
+      "total_sales": 480000.0,
+      "lat": 7.68,
+      "lng": -5.02
+    }
+  ],
+  "top_zone": {
+    "city": null,
+    "region": null,
+    "orders": 33,
+    "total_sales": 1580000.0,
+    "lat": 5.36,
+    "lng": -3.99
+  }
+}
+```
+
+**Response Fields:**
+- `heatmap`: Array of zones with sales data, sorted by order count (descending)
+  - `city`: City name (currently null, will be populated when order shipping address is added)
+  - `region`: Region/district name (currently null, will be populated when order shipping address is added)
+  - `orders`: Number of orders in this zone
+  - `total_sales`: Total sales amount in this zone
+  - `lat`: Latitude for map display
+  - `lng`: Longitude for map display
+- `top_zone`: Zone with the highest number of orders (null if no orders)
+
+**Notes:**
+- Orders are grouped by customer location (rounded to 2 decimal places for nearby locations)
+- Orders without location data are excluded from the heatmap
+- The endpoint currently uses buyer location; future updates will use shipping address from orders
+
+**Error Responses:**
+
+**400 Bad Request (Invalid date format):**
+```json
+{
+  "detail": "Invalid 'from' date format. Use ISO format (e.g., 2024-01-01T00:00:00Z)"
+}
+```
+
+**401 Unauthorized:**
+```json
+{
+  "detail": "Could not validate credentials"
+}
+```
+
+**403 Forbidden:**
+```json
+{
+  "detail": "Only merchants can access this endpoint"
 }
 ```
 
