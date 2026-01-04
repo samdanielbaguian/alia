@@ -1,15 +1,22 @@
 from typing import Dict, Optional
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import calendar
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
-from datetime import datetime
+from bson.errors import InvalidId
 
 from app.api.deps import get_db, get_current_user, get_current_merchant
 from app.schemas.share import MerchantShareResponse
 from app.schemas.order import OrderResponse, OrderProductResponse, StatusHistoryResponse
-from app.schemas.dashboard import DashboardOverviewResponse, DashboardPeriod
+from app.schemas.dashboard import (
+    DashboardOverviewResponse, DashboardPeriod,
+    OrderStatsResponse, OrderStatsPoint,
+    BestsellersResponse, BestsellerProduct, BestsellerCategory,
+    AlertsResponse, Alert,
+    RecentActivityResponse, ActivityItem,
+    ExportOrdersRequest, ExportOrdersResponse
+)
 from app.services.share_service import ShareService
 from app.services.order_service import OrderService
 
@@ -546,4 +553,585 @@ async def get_dashboard_overview(
         products_in_stock=products_stats["products_in_stock"],
         low_stock=products_stats["low_stock"],
         period=DashboardPeriod(**{"from": from_date, "to": to_date})
+    )
+
+
+@router.get("/me/orders/stats", response_model=OrderStatsResponse)
+async def get_orders_stats(
+    from_date: Optional[date] = Query(None, alias="from", description="Start date (YYYY-MM-DD)"),
+    to_date: Optional[date] = Query(None, alias="to", description="End date (YYYY-MM-DD)"),
+    current_user: dict = Depends(get_current_merchant),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Get order statistics time series for merchant dashboard charts.
+    
+    Returns daily statistics including:
+    - Number of orders per day
+    - Total sales amount per day
+    - Orders breakdown by status per day
+    
+    Query params:
+    - from: Start date (YYYY-MM-DD), defaults to 30 days ago
+    - to: End date (YYYY-MM-DD), defaults to today
+    
+    Requires merchant authentication.
+    """
+    user_id = str(current_user["_id"])
+    
+    # Set default period to last 30 days if not provided
+    now = datetime.utcnow()
+    if not to_date:
+        to_date = date(now.year, now.month, now.day)
+    if not from_date:
+        # 30 days ago
+        thirty_days_ago = now - timedelta(days=30)
+        from_date = date(thirty_days_ago.year, thirty_days_ago.month, thirty_days_ago.day)
+    
+    # Convert dates to datetime for MongoDB queries
+    start_datetime = datetime.combine(from_date, datetime.min.time())
+    end_datetime = datetime.combine(to_date, datetime.max.time())
+    
+    # Get merchant profile
+    merchant = await db.merchants.find_one({"user_id": user_id})
+    if not merchant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Merchant profile not found"
+        )
+    
+    # Aggregate orders by date
+    pipeline = [
+        {
+            "$match": {
+                "merchant_id": user_id,
+                "created_at": {"$gte": start_datetime, "$lte": end_datetime}
+            }
+        },
+        {
+            "$project": {
+                "date": {
+                    "$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}
+                },
+                "total_amount": 1,
+                "status": 1
+            }
+        },
+        {
+            "$group": {
+                "_id": "$date",
+                "orders_count": {"$sum": 1},
+                "total_amount": {"$sum": "$total_amount"},
+                "orders_pending": {
+                    "$sum": {"$cond": [{"$eq": ["$status", "pending"]}, 1, 0]}
+                },
+                "orders_confirmed": {
+                    "$sum": {"$cond": [{"$eq": ["$status", "confirmed"]}, 1, 0]}
+                },
+                "orders_shipped": {
+                    "$sum": {"$cond": [{"$eq": ["$status", "shipped"]}, 1, 0]}
+                },
+                "orders_delivered": {
+                    "$sum": {"$cond": [{"$eq": ["$status", "delivered"]}, 1, 0]}
+                },
+                "orders_cancelled": {
+                    "$sum": {"$cond": [{"$eq": ["$status", "cancelled"]}, 1, 0]}
+                }
+            }
+        },
+        {
+            "$sort": {"_id": 1}
+        }
+    ]
+    
+    results = await db.orders.aggregate(pipeline).to_list(length=None)
+    
+    # Convert to response format
+    stats = [
+        OrderStatsPoint(
+            date=r["_id"],
+            orders_count=r["orders_count"],
+            total_amount=r["total_amount"],
+            orders_pending=r["orders_pending"],
+            orders_confirmed=r["orders_confirmed"],
+            orders_shipped=r["orders_shipped"],
+            orders_delivered=r["orders_delivered"],
+            orders_cancelled=r["orders_cancelled"]
+        )
+        for r in results
+    ]
+    
+    # Calculate summary
+    total_orders = sum(s.orders_count for s in stats)
+    total_sales = sum(s.total_amount for s in stats)
+    avg_order_value = total_sales / total_orders if total_orders > 0 else 0.0
+    
+    summary = {
+        "total_orders": total_orders,
+        "total_sales": total_sales,
+        "avg_order_value": round(avg_order_value, 2)
+    }
+    
+    return OrderStatsResponse(
+        period=DashboardPeriod(**{"from": from_date, "to": to_date}),
+        stats=stats,
+        summary=summary
+    )
+
+
+@router.get("/me/bestsellers", response_model=BestsellersResponse)
+async def get_bestsellers(
+    from_date: Optional[date] = Query(None, alias="from", description="Start date (YYYY-MM-DD)"),
+    to_date: Optional[date] = Query(None, alias="to", description="End date (YYYY-MM-DD)"),
+    limit: int = Query(10, ge=1, le=50, description="Number of top items to return"),
+    current_user: dict = Depends(get_current_merchant),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Get bestselling products and categories for merchant dashboard.
+    
+    Returns:
+    - Top selling products by quantity and revenue
+    - Top selling categories by quantity and revenue
+    
+    Query params:
+    - from: Start date (YYYY-MM-DD), defaults to first day of current month
+    - to: End date (YYYY-MM-DD), defaults to today
+    - limit: Number of top items to return (default: 10, max: 50)
+    
+    Requires merchant authentication.
+    """
+    user_id = str(current_user["_id"])
+    
+    # Set default period to current month if not provided
+    now = datetime.utcnow()
+    if not from_date:
+        from_date = date(now.year, now.month, 1)
+    if not to_date:
+        to_date = date(now.year, now.month, now.day)
+    
+    # Convert dates to datetime for MongoDB queries
+    start_datetime = datetime.combine(from_date, datetime.min.time())
+    end_datetime = datetime.combine(to_date, datetime.max.time())
+    
+    # Get merchant profile
+    merchant = await db.merchants.find_one({"user_id": user_id})
+    if not merchant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Merchant profile not found"
+        )
+    
+    # Get orders in period
+    orders = await db.orders.find({
+        "merchant_id": user_id,
+        "created_at": {"$gte": start_datetime, "$lte": end_datetime}
+    }).to_list(length=None)
+    
+    # Aggregate product sales
+    product_sales = {}
+    for order in orders:
+        for product in order["products"]:
+            product_id = product["product_id"]
+            if product_id not in product_sales:
+                product_sales[product_id] = {
+                    "product_id": product_id,
+                    "title": product["title"],
+                    "quantity_sold": 0,
+                    "revenue": 0.0,
+                    "orders_count": 0,
+                    "order_ids": set()
+                }
+            product_sales[product_id]["quantity_sold"] += product["quantity"]
+            product_sales[product_id]["revenue"] += product["price"] * product["quantity"]
+            product_sales[product_id]["order_ids"].add(str(order["_id"]))
+    
+    # Convert to list and add orders_count
+    for ps in product_sales.values():
+        ps["orders_count"] = len(ps["order_ids"])
+        del ps["order_ids"]
+    
+    # Sort by revenue and get top products
+    top_products_data = sorted(
+        product_sales.values(),
+        key=lambda x: x["revenue"],
+        reverse=True
+    )[:limit]
+    
+    # Batch fetch product details to avoid N+1 queries
+    product_ids = []
+    for pd in top_products_data:
+        try:
+            product_ids.append(ObjectId(pd["product_id"]))
+        except (InvalidId, ValueError, TypeError):
+            # If product_id is not a valid ObjectId, skip
+            pass
+    
+    # Fetch all products in a single query
+    products_cursor = db.products.find({"_id": {"$in": product_ids}})
+    products = await products_cursor.to_list(length=len(product_ids))
+    
+    # Create a lookup map for quick access
+    products_map = {str(p["_id"]): p for p in products}
+    
+    # Build top products list with images
+    top_products = []
+    for pd in top_products_data:
+        product = products_map.get(pd["product_id"])
+        image_url = None
+        if product and product.get("images"):
+            image_url = product["images"][0] if isinstance(product["images"], list) else product["images"]
+        
+        top_products.append(BestsellerProduct(
+            product_id=pd["product_id"],
+            title=pd["title"],
+            quantity_sold=pd["quantity_sold"],
+            revenue=pd["revenue"],
+            orders_count=pd["orders_count"],
+            image_url=image_url
+        ))
+    
+    # Aggregate category sales using the same products map
+    category_sales = {}
+    for product_id, ps in product_sales.items():
+        product = products_map.get(product_id)
+        
+        if product:
+            category = product.get("category", "Uncategorized")
+        else:
+            category = "Uncategorized"
+        
+        if category not in category_sales:
+            category_sales[category] = {
+                "category": category,
+                "quantity_sold": 0,
+                "revenue": 0.0,
+                "products": set()
+            }
+        category_sales[category]["quantity_sold"] += ps["quantity_sold"]
+        category_sales[category]["revenue"] += ps["revenue"]
+        category_sales[category]["products"].add(product_id)
+    
+    # Convert to list and add products_count
+    for cs in category_sales.values():
+        cs["products_count"] = len(cs["products"])
+        del cs["products"]
+    
+    # Sort by revenue and get top categories
+    top_categories = [
+        BestsellerCategory(**cs)
+        for cs in sorted(
+            category_sales.values(),
+            key=lambda x: x["revenue"],
+            reverse=True
+        )[:limit]
+    ]
+    
+    return BestsellersResponse(
+        period=DashboardPeriod(**{"from": from_date, "to": to_date}),
+        top_products=top_products,
+        top_categories=top_categories
+    )
+
+
+@router.get("/me/alerts", response_model=AlertsResponse)
+async def get_alerts(
+    current_user: dict = Depends(get_current_merchant),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Get real-time alerts for merchant dashboard.
+    
+    Returns alerts for:
+    - Pending orders waiting for confirmation
+    - Low stock products
+    - High refund rate
+    - Other important notifications
+    
+    Requires merchant authentication.
+    """
+    user_id = str(current_user["_id"])
+    
+    # Get merchant profile
+    merchant = await db.merchants.find_one({"user_id": user_id})
+    if not merchant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Merchant profile not found"
+        )
+    
+    alerts = []
+    now = datetime.utcnow()
+    
+    # Check pending orders
+    pending_count = await db.orders.count_documents({
+        "merchant_id": user_id,
+        "status": "pending"
+    })
+    
+    if pending_count > 0:
+        severity = "critical" if pending_count > 10 else "warning"
+        alerts.append(Alert(
+            type="pending_orders",
+            severity=severity,
+            title="Pending Orders",
+            message=f"You have {pending_count} order{'s' if pending_count > 1 else ''} pending confirmation",
+            count=pending_count,
+            action_url="/api/merchants/me/orders?status=pending",
+            created_at=now
+        ))
+    
+    # Check low stock products
+    low_stock_count = await db.products.count_documents({
+        "merchant_id": user_id,
+        "stock": {"$gt": 0, "$lte": 5}
+    })
+    
+    if low_stock_count > 0:
+        alerts.append(Alert(
+            type="low_stock",
+            severity="warning",
+            title="Low Stock Alert",
+            message=f"{low_stock_count} product{'s are' if low_stock_count > 1 else ' is'} running low on stock",
+            count=low_stock_count,
+            action_url="/api/products?merchant_id=" + user_id + "&low_stock=true",
+            created_at=now
+        ))
+    
+    # Check out of stock products
+    out_of_stock_count = await db.products.count_documents({
+        "merchant_id": user_id,
+        "stock": 0
+    })
+    
+    if out_of_stock_count > 0:
+        alerts.append(Alert(
+            type="out_of_stock",
+            severity="critical",
+            title="Out of Stock",
+            message=f"{out_of_stock_count} product{'s are' if out_of_stock_count > 1 else ' is'} out of stock",
+            count=out_of_stock_count,
+            action_url="/api/products?merchant_id=" + user_id + "&out_of_stock=true",
+            created_at=now
+        ))
+    
+    # Check recent refunds (last 7 days)
+    seven_days_ago = now - timedelta(days=7)
+    recent_refunds_count = await db.refunds.count_documents({
+        "merchant_id": user_id,
+        "created_at": {"$gte": seven_days_ago}
+    })
+    
+    if recent_refunds_count > 5:
+        alerts.append(Alert(
+            type="high_refunds",
+            severity="warning",
+            title="High Refund Rate",
+            message=f"{recent_refunds_count} refunds in the last 7 days",
+            count=recent_refunds_count,
+            action_url="/api/merchants/me/recent-activity?type=refund",
+            created_at=now
+        ))
+    
+    # Check old pending orders (>3 days)
+    three_days_ago = now - timedelta(days=3)
+    old_pending_count = await db.orders.count_documents({
+        "merchant_id": user_id,
+        "status": "pending",
+        "created_at": {"$lte": three_days_ago}
+    })
+    
+    if old_pending_count > 0:
+        alerts.append(Alert(
+            type="old_pending_orders",
+            severity="critical",
+            title="Old Pending Orders",
+            message=f"{old_pending_count} order{'s have' if old_pending_count > 1 else ' has'} been pending for more than 3 days",
+            count=old_pending_count,
+            action_url="/api/merchants/me/orders?status=pending",
+            created_at=now
+        ))
+    
+    return AlertsResponse(
+        alerts=alerts,
+        total=len(alerts)
+    )
+
+
+@router.get("/me/recent-activity", response_model=RecentActivityResponse)
+async def get_recent_activity(
+    limit: int = Query(20, ge=1, le=100, description="Number of activities to return"),
+    activity_type: Optional[str] = Query(None, alias="type", description="Filter by activity type"),
+    current_user: dict = Depends(get_current_merchant),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Get recent activity for merchant dashboard.
+    
+    Returns recent:
+    - New orders
+    - Refunds processed
+    - Order status changes
+    - Product updates
+    
+    Query params:
+    - limit: Number of activities to return (default: 20, max: 100)
+    - type: Filter by activity type (order, refund, status_change)
+    
+    Requires merchant authentication.
+    """
+    user_id = str(current_user["_id"])
+    
+    # Get merchant profile
+    merchant = await db.merchants.find_one({"user_id": user_id})
+    if not merchant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Merchant profile not found"
+        )
+    
+    activities = []
+    
+    # Get recent orders
+    if not activity_type or activity_type == "order":
+        recent_orders = await db.orders.find({
+            "merchant_id": user_id
+        }).sort("created_at", -1).limit(limit).to_list(length=limit)
+        
+        # Batch fetch customer information to avoid N+1 queries
+        customer_ids = []
+        for order in recent_orders:
+            if ObjectId.is_valid(order["user_id"]):
+                try:
+                    customer_ids.append(ObjectId(order["user_id"]))
+                except (InvalidId, ValueError, TypeError):
+                    pass
+        
+        # Fetch all customers in a single query
+        customers_cursor = db.users.find({"_id": {"$in": customer_ids}})
+        customers = await customers_cursor.to_list(length=len(customer_ids))
+        customers_map = {str(c["_id"]): c for c in customers}
+        
+        for order in recent_orders:
+            # Get customer info from map
+            customer = customers_map.get(order["user_id"])
+            customer_name = customer.get("username", "Unknown") if customer else "Unknown"
+            
+            activities.append(ActivityItem(
+                type="order",
+                title="New Order Received",
+                description=f"Order from {customer_name}",
+                timestamp=order["created_at"],
+                reference_id=str(order["_id"]),
+                amount=order["total_amount"],
+                status=order["status"]
+            ))
+    
+    # Get recent refunds
+    if not activity_type or activity_type == "refund":
+        recent_refunds = await db.refunds.find({
+            "merchant_id": user_id
+        }).sort("created_at", -1).limit(limit).to_list(length=limit)
+        
+        for refund in recent_refunds:
+            activities.append(ActivityItem(
+                type="refund",
+                title="Refund " + refund["status"].title(),
+                description=f"Refund for order {refund['order_id']}: {refund['reason']}",
+                timestamp=refund["created_at"],
+                reference_id=refund.get("refund_id", str(refund["_id"])),
+                amount=refund["amount"],
+                status=refund["status"]
+            ))
+    
+    # Sort all activities by timestamp descending
+    activities.sort(key=lambda x: x.timestamp, reverse=True)
+    
+    # Limit to requested number
+    activities = activities[:limit]
+    
+    return RecentActivityResponse(
+        activities=activities,
+        total=len(activities)
+    )
+
+
+@router.post("/me/exports/orders", response_model=ExportOrdersResponse)
+async def export_orders(
+    request: ExportOrdersRequest,
+    current_user: dict = Depends(get_current_merchant),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Export orders to CSV for merchant dashboard.
+    
+    Returns CSV file content with order data for the specified period.
+    
+    Request body:
+    - from: Start date (YYYY-MM-DD), defaults to first day of current month
+    - to: End date (YYYY-MM-DD), defaults to today
+    - status: Filter by order status (optional)
+    - format: Export format (csv only for now)
+    
+    Requires merchant authentication.
+    """
+    user_id = str(current_user["_id"])
+    
+    # Set default period to current month if not provided
+    now = datetime.utcnow()
+    from_date = request.from_date
+    to_date = request.to_date
+    
+    if not from_date:
+        from_date = date(now.year, now.month, 1)
+    if not to_date:
+        to_date = date(now.year, now.month, now.day)
+    
+    # Convert dates to datetime for MongoDB queries
+    start_datetime = datetime.combine(from_date, datetime.min.time())
+    end_datetime = datetime.combine(to_date, datetime.max.time())
+    
+    # Get merchant profile
+    merchant = await db.merchants.find_one({"user_id": user_id})
+    if not merchant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Merchant profile not found"
+        )
+    
+    # Build query
+    query = {
+        "merchant_id": user_id,
+        "created_at": {"$gte": start_datetime, "$lte": end_datetime}
+    }
+    
+    if request.status:
+        query["status"] = request.status
+    
+    # Get orders
+    orders = await db.orders.find(query).sort("created_at", -1).to_list(length=None)
+    
+    # Generate CSV content
+    csv_lines = ["Order ID,Date,Customer ID,Total Amount,Status,Payment Method,Products Count"]
+    
+    for order in orders:
+        order_id = str(order["_id"])
+        order_date = order["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+        customer_id = order["user_id"]
+        total_amount = order["total_amount"]
+        status = order["status"]
+        payment_method = order["payment_method"]
+        products_count = len(order["products"])
+        
+        csv_lines.append(
+            f"{order_id},{order_date},{customer_id},{total_amount},{status},{payment_method},{products_count}"
+        )
+    
+    csv_content = "\n".join(csv_lines)
+    filename = f"orders_{from_date}_{to_date}.csv"
+    
+    return ExportOrdersResponse(
+        filename=filename,
+        content=csv_content,
+        rows_count=len(orders)
     )
