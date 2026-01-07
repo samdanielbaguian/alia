@@ -63,6 +63,12 @@ async def get_products(
             delivery_days=product.get("delivery_days", 7),
             age_restricted=product.get("age_restricted", False),
             location=product.get("location"),
+            sku=product.get("sku"),
+            size=product.get("size"),
+            color=product.get("color"),
+            weight=product.get("weight"),
+            dimensions=product.get("dimensions"),
+            material=product.get("material"),
             created_at=product["created_at"],
             updated_at=product.get("updated_at", product["created_at"])
         )
@@ -113,6 +119,12 @@ async def search_products(
             delivery_days=product.get("delivery_days", 7),
             age_restricted=product.get("age_restricted", False),
             location=product.get("location"),
+            sku=product.get("sku"),
+            size=product.get("size"),
+            color=product.get("color"),
+            weight=product.get("weight"),
+            dimensions=product.get("dimensions"),
+            material=product.get("material"),
             created_at=product["created_at"],
             updated_at=product.get("updated_at", product["created_at"])
         )
@@ -156,6 +168,12 @@ async def get_product(
         delivery_days=product.get("delivery_days", 7),
         age_restricted=product.get("age_restricted", False),
         location=product.get("location"),
+        sku=product.get("sku"),
+        size=product.get("size"),
+        color=product.get("color"),
+        weight=product.get("weight"),
+        dimensions=product.get("dimensions"),
+        material=product.get("material"),
         created_at=product["created_at"],
         updated_at=product.get("updated_at", product["created_at"])
     )
@@ -186,6 +204,12 @@ async def create_product(
         "delivery_days": product.delivery_days,
         "age_restricted": product.age_restricted,
         "location": product.location.dict() if product.location else None,
+        "sku": product.sku,
+        "size": product.size,
+        "color": product.color,
+        "weight": product.weight,
+        "dimensions": product.dimensions,
+        "material": product.material,
         "created_at": datetime.utcnow(),
         "updated_at": datetime.utcnow()
     }
@@ -209,6 +233,12 @@ async def create_product(
         delivery_days=product_data["delivery_days"],
         age_restricted=product_data["age_restricted"],
         location=product_data.get("location"),
+        sku=product_data.get("sku"),
+        size=product_data.get("size"),
+        color=product_data.get("color"),
+        weight=product_data.get("weight"),
+        dimensions=product_data.get("dimensions"),
+        material=product_data.get("material"),
         created_at=product_data["created_at"],
         updated_at=product_data["updated_at"]
     )
@@ -268,6 +298,18 @@ async def update_product(
         update_data["age_restricted"] = product_update.age_restricted
     if product_update.location is not None:
         update_data["location"] = product_update.location.dict()
+    if product_update.sku is not None:
+        update_data["sku"] = product_update.sku
+    if product_update.size is not None:
+        update_data["size"] = product_update.size
+    if product_update.color is not None:
+        update_data["color"] = product_update.color
+    if product_update.weight is not None:
+        update_data["weight"] = product_update.weight
+    if product_update.dimensions is not None:
+        update_data["dimensions"] = product_update.dimensions
+    if product_update.material is not None:
+        update_data["material"] = product_update.material
     
     await db.products.update_one(
         {"_id": ObjectId(product_id)},
@@ -293,6 +335,12 @@ async def update_product(
         delivery_days=updated_product["delivery_days"],
         age_restricted=updated_product["age_restricted"],
         location=updated_product.get("location"),
+        sku=updated_product.get("sku"),
+        size=updated_product.get("size"),
+        color=updated_product.get("color"),
+        weight=updated_product.get("weight"),
+        dimensions=updated_product.get("dimensions"),
+        material=updated_product.get("material"),
         created_at=updated_product["created_at"],
         updated_at=updated_product["updated_at"]
     )
@@ -389,6 +437,12 @@ async def view_shared_product(
         delivery_days=product.get("delivery_days", 7),
         age_restricted=product.get("age_restricted", False),
         location=product.get("location"),
+        sku=product.get("sku"),
+        size=product.get("size"),
+        color=product.get("color"),
+        weight=product.get("weight"),
+        dimensions=product.get("dimensions"),
+        material=product.get("material"),
         created_at=product["created_at"],
         updated_at=product.get("updated_at", product["created_at"])
     )

@@ -37,6 +37,8 @@ class OrderProduct(BaseModel):
     quantity: int = Field(gt=0)
     price: float = Field(gt=0)
     title: str
+    size: Optional[str] = None  # Product size at time of order
+    color: Optional[str] = None  # Product color at time of order
 
 
 class Order(BaseModel):
@@ -71,7 +73,9 @@ class Order(BaseModel):
                         "product_id": "prod123",
                         "quantity": 2,
                         "price": 299.99,
-                        "title": "Smartphone XYZ"
+                        "title": "Smartphone XYZ",
+                        "size": "6.5 inches",
+                        "color": "Midnight Black"
                     }
                 ],
                 "total_amount": 599.98,

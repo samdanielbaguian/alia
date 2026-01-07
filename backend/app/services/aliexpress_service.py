@@ -87,6 +87,12 @@ async def import_product(
         "source_product_id": source_product_id,
         "delivery_days": 14,
         "age_restricted": False,
+        "sku": None,  # Will be fetched from API
+        "size": None,  # Will be fetched from API
+        "color": None,  # Will be fetched from API
+        "weight": None,  # Will be fetched from API
+        "dimensions": None,  # Will be fetched from API
+        "material": None,  # Will be fetched from API
         "created_at": datetime.utcnow(),
         "updated_at": datetime.utcnow()
     }

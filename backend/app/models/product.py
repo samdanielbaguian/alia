@@ -22,6 +22,12 @@ class Product(BaseModel):
     delivery_days: int = Field(default=7, ge=1, le=30)  # 1-3 local, 7-21 imported
     age_restricted: bool = False
     location: Optional[Location] = None
+    # Additional product attributes for dashboard
+    size: Optional[str] = None  # Product size (e.g., "M", "Large", "10x20cm")
+    color: Optional[str] = None  # Product color
+    weight: Optional[float] = None  # Weight in kg
+    dimensions: Optional[str] = None  # Dimensions (e.g., "10x20x30 cm")
+    material: Optional[str] = None  # Material composition
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     
@@ -41,6 +47,11 @@ class Product(BaseModel):
                 "is_imported": True,
                 "source_platform": "AliExpress",
                 "delivery_days": 14,
-                "age_restricted": False
+                "age_restricted": False,
+                "size": "6.5 inches",
+                "color": "Midnight Black",
+                "weight": 0.195,
+                "dimensions": "15.5 x 7.5 x 0.8 cm",
+                "material": "Aluminum and Glass"
             }
         }

@@ -81,7 +81,9 @@ async def create_order(
             "product_id": str(product["_id"]),
             "quantity": item.quantity,
             "price": product["price"],
-            "title": product["title"]
+            "title": product["title"],
+            "size": product.get("size"),
+            "color": product.get("color")
         })
     
     # Process payment
@@ -144,7 +146,9 @@ async def create_order(
                 product_id=p["product_id"],
                 quantity=p["quantity"],
                 price=p["price"],
-                title=p["title"]
+                title=p["title"],
+                size=p.get("size"),
+                color=p.get("color")
             )
             for p in order_data["products"]
         ],
@@ -214,8 +218,10 @@ async def get_orders(
                         product_id=p["product_id"],
                         quantity=p["quantity"],
                         price=p["price"],
-                        title=p["title"]
-                    )
+                        title=p["title"],
+                size=p.get("size"),
+                color=p.get("color")
+            )
                     for p in order["products"]
                 ],
                 total_amount=order["total_amount"],
@@ -283,7 +289,9 @@ async def get_order(
                 product_id=p["product_id"],
                 quantity=p["quantity"],
                 price=p["price"],
-                title=p["title"]
+                title=p["title"],
+                size=p.get("size"),
+                color=p.get("color")
             )
             for p in order["products"]
         ],
@@ -388,7 +396,9 @@ async def create_order_from_cart(
                 product_id=p["product_id"],
                 quantity=p["quantity"],
                 price=p["price"],
-                title=p["title"]
+                title=p["title"],
+                size=p.get("size"),
+                color=p.get("color")
             )
             for p in order_data["products"]
         ],
