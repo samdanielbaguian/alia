@@ -7,6 +7,7 @@ from app.models.user import Location
 class Product(BaseModel):
     """Product model for MongoDB."""
     id: Optional[str] = Field(None, alias="_id")
+    sku: Optional[str] = None  # Stock Keeping Unit
     title: str
     description: str
     price: float = Field(gt=0)
@@ -29,6 +30,7 @@ class Product(BaseModel):
         json_schema_extra = {
             "example": {
                 "title": "Smartphone XYZ",
+                "sku": "SMART-XYZ-128GB",
                 "description": "High-end smartphone with great features",
                 "price": 299.99,
                 "original_price": 250.00,
