@@ -31,6 +31,8 @@ class OrderProductResponse(BaseModel):
     quantity: int
     price: float
     title: str
+    size: Optional[str] = None
+    color: Optional[str] = None
 
 
 class StatusHistoryResponse(BaseModel):

@@ -15,6 +15,13 @@ class ProductCreate(BaseModel):
     delivery_days: int = Field(default=3, ge=1, le=30)
     age_restricted: bool = False
     location: Optional[Location] = None
+    # Additional product attributes
+    sku: Optional[str] = None
+    size: Optional[str] = None
+    color: Optional[str] = None
+    weight: Optional[float] = None
+    dimensions: Optional[str] = None
+    material: Optional[str] = None
 
 
 class ProductUpdate(BaseModel):
@@ -28,6 +35,13 @@ class ProductUpdate(BaseModel):
     delivery_days: Optional[int] = Field(None, ge=1, le=30)
     age_restricted: Optional[bool] = None
     location: Optional[Location] = None
+    # Additional product attributes
+    sku: Optional[str] = None
+    size: Optional[str] = None
+    color: Optional[str] = None
+    weight: Optional[float] = None
+    dimensions: Optional[str] = None
+    material: Optional[str] = None
 
 
 class ProductImport(BaseModel):
@@ -65,6 +79,13 @@ class ProductResponse(BaseModel):
     delivery_days: int
     age_restricted: bool
     location: Optional[Location] = None
+    # Additional product attributes
+    sku: Optional[str] = None
+    size: Optional[str] = None
+    color: Optional[str] = None
+    weight: Optional[float] = None
+    dimensions: Optional[str] = None
+    material: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     

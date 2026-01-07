@@ -82,6 +82,12 @@ async def import_aliexpress_product(
             delivery_days=imported_product["delivery_days"],
             age_restricted=imported_product["age_restricted"],
             location=imported_product.get("location"),
+            sku=imported_product.get("sku"),
+            size=imported_product.get("size"),
+            color=imported_product.get("color"),
+            weight=imported_product.get("weight"),
+            dimensions=imported_product.get("dimensions"),
+            material=imported_product.get("material"),
             created_at=imported_product["created_at"],
             updated_at=imported_product["updated_at"]
         ),
