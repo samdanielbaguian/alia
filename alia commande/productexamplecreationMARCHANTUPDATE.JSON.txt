@@ -2,9 +2,8 @@
   "title": "Nike Air Max 2024",
   "description":  "Nike Air Max 2024 authentiques, revendeur officiel Nike.  Stock limité.",
   "price":  46000,
-  "original_price": 46000,
   "images": [
-    "https://static.nike.com/a/images/t_PDP_1280_v1/f_auto/air-max-3. jpg"
+    "https://static.nike.com/a/images/t_PDP_1280_v1/f_auto/air-max-3.jpg"
   ],
   "stock": 30,
   "category": "chaussures",
@@ -14,5 +13,11 @@
   "location":  {
     "lat": 12.3650,
     "lng": -2.0050
-  }
-}  s
+  },
+  "sku": "NIKE-AM2024-GRY-43",
+  "size": "43",
+  "color": "Grey/Orange",
+  "weight": 0.36,
+  "dimensions": "31 x 20 x 12 cm",
+  "material": "Mesh and Synthetic Leather"
+}
