@@ -223,17 +223,17 @@ async def get_orders(
                 merchant_id=order["merchant_id"],
                 products=[
                     OrderProductResponse(
-                product_id=p["product_id"],
-                quantity=p["quantity"],
-                price=p["price"],
-                title=p["title"],
-                size=p.get("size"),
-                color=p.get("color"),
-                sku=p.get("sku"),
-                weight=p.get("weight"),
-                dimensions=p.get("dimensions"),
-                material=p.get("material")
-            )
+                        product_id=p["product_id"],
+                        quantity=p["quantity"],
+                        price=p["price"],
+                        title=p["title"],
+                        size=p.get("size"),
+                        color=p.get("color"),
+                        sku=p.get("sku"),
+                        weight=p.get("weight"),
+                        dimensions=p.get("dimensions"),
+                        material=p.get("material")
+                    )
                     for p in order["products"]
                 ],
                 total_amount=order["total_amount"],

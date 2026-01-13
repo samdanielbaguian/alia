@@ -3,7 +3,7 @@
   "description":  "Nike Air Max 2024 authentiques, revendeur officiel Nike.  Stock limité.",
   "price":  46000,
   "images": [
-    "https://static.nike.com/a/images/t_PDP_1280_v1/f_auto/air-max-3. jpg"
+    "https://static.nike.com/a/images/t_PDP_1280_v1/f_auto/air-max-3.jpg"
   ],
   "stock": 30,
   "category": "chaussures",
