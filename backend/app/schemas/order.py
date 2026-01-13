@@ -33,6 +33,10 @@ class OrderProductResponse(BaseModel):
     title: str
     size: Optional[str] = None
     color: Optional[str] = None
+    sku: Optional[str] = None
+    weight: Optional[float] = None
+    dimensions: Optional[str] = None
+    material: Optional[str] = None
 
 
 class StatusHistoryResponse(BaseModel):
