@@ -18,18 +18,22 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None, role: Optional[str] = None) -> str:
     """
     Create a JWT access token.
     
     Args:
         data: Dictionary containing the claims to encode
         expires_delta: Optional expiration time delta
+        role: User role to include in the token payload ('merchant' or 'buyer')
         
     Returns:
         Encoded JWT token string
     """
     to_encode = data.copy()
+    
+    if role is not None:
+        to_encode["role"] = role
     
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
