@@ -1135,3 +1135,126 @@ async def export_orders(
         content=csv_content,
         rows_count=len(orders)
     )
+
+
+@router.get("/me")
+async def get_my_merchant_profile(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Get the current merchant's profile.
+    
+    Returns the merchant profile for the authenticated merchant user.
+    """
+    user_id = str(current_user["_id"])
+    
+    if current_user["role"] != "merchant":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only merchants can access this endpoint"
+        )
+    
+    merchant = await db.merchants.find_one({"user_id": user_id})
+    
+    if not merchant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Merchant profile not found"
+        )
+    
+    return {
+        "id": str(merchant["_id"]),
+        "user_id": merchant["user_id"],
+        "shop_name": merchant["shop_name"],
+        "description": merchant.get("description", ""),
+        "location": merchant.get("location"),
+        "total_sales": merchant.get("total_sales", 0.0),
+        "rating": merchant.get("rating", 50.0),
+        "created_at": merchant["created_at"]
+    }
+
+
+@router.get("/me/products")
+async def get_my_products(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Get the current merchant's products.
+    
+    Returns all products owned by the authenticated merchant.
+    """
+    user_id = str(current_user["_id"])
+    
+    if current_user["role"] != "merchant":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only merchants can access this endpoint"
+        )
+    
+    # Query products
+    products = await db.products.find({"merchant_id": user_id}).skip(skip).limit(limit).to_list(length=limit)
+    total = await db.products.count_documents({"merchant_id": user_id})
+    
+    return {
+        "products": [
+            {
+                "id": str(p["_id"]),
+                "title": p["title"],
+                "description": p.get("description", ""),
+                "price": p["price"],
+                "stock": p.get("stock", 0),
+                "category": p.get("category", ""),
+                "images": p.get("images", []),
+                "merchant_id": p["merchant_id"],
+                "created_at": p.get("created_at"),
+                "sku": p.get("sku"),
+                "size": p.get("size"),
+                "color": p.get("color"),
+                "weight": p.get("weight"),
+                "dimensions": p.get("dimensions"),
+                "material": p.get("material")
+            }
+            for p in products
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": skip
+    }
+
+
+@router.get("")
+async def list_merchants(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Get public list of all merchants.
+    
+    This is a public endpoint - no authentication required.
+    Returns basic merchant information for display in the marketplace.
+    """
+    merchants = await db.merchants.find({}).skip(skip).limit(limit).to_list(length=limit)
+    total = await db.merchants.count_documents({})
+    
+    return {
+        "merchants": [
+            {
+                "id": str(m["_id"]),
+                "user_id": m["user_id"],
+                "shop_name": m["shop_name"],
+                "description": m.get("description", ""),
+                "location": m.get("location"),
+                "rating": m.get("rating", 50.0),
+                "created_at": m["created_at"]
+            }
+            for m in merchants
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": skip
+    }

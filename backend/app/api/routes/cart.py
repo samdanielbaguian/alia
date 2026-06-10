@@ -17,6 +17,33 @@ from app.services.share_service import ShareService
 router = APIRouter()
 
 
+@router.post("/add", response_model=CartResponse, status_code=status.HTTP_201_CREATED)
+async def add_to_cart_alias(
+    request: AddToCartRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Add a product to the cart (alias endpoint for /items).
+    
+    Validates:
+    - Product exists
+    - Sufficient stock available
+    
+    If product already in cart, increases quantity.
+    """
+    user_id = str(current_user["_id"])
+    
+    await CartService.add_item(
+        user_id=user_id,
+        product_id=request.product_id,
+        quantity=request.quantity,
+        db=db
+    )
+    
+    return await CartService.get_cart_with_details(user_id, db)
+
+
 @router.post("/items", response_model=CartResponse, status_code=status.HTTP_201_CREATED)
 async def add_to_cart(
     request: AddToCartRequest,

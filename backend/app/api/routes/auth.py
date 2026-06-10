@@ -123,3 +123,78 @@ async def get_me(current_user: dict = Depends(get_current_user)):
         location=current_user.get("location"),
         created_at=current_user["created_at"]
     )
+
+
+@router.get("/google")
+async def google_auth():
+    """
+    Initiate Google OAuth authentication.
+    
+    TODO: Implement Google OAuth flow
+    - Redirect to Google OAuth consent screen
+    - Handle callback with authorization code
+    - Exchange code for tokens
+    - Create/login user
+    """
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Google OAuth is not yet implemented. Please use email/password registration."
+    )
+
+
+@router.get("/apple")
+async def apple_auth():
+    """
+    Initiate Apple Sign In authentication.
+    
+    TODO: Implement Apple Sign In flow
+    - Redirect to Apple authentication
+    - Handle callback with authorization code
+    - Verify and decode identity token
+    - Create/login user
+    """
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Apple Sign In is not yet implemented. Please use email/password registration."
+    )
+
+
+@router.post("/phone/send-code")
+async def send_phone_code(
+    phone_number: str,
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Send verification code to phone number.
+    
+    TODO: Implement SMS sending via Twilio or similar service
+    - Validate phone number format
+    - Generate 6-digit code
+    - Store code with expiration (5 minutes)
+    - Send SMS via provider
+    """
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Phone authentication is not yet implemented. Please use email/password registration."
+    )
+
+
+@router.post("/phone/verify")
+async def verify_phone_code(
+    phone_number: str,
+    code: str,
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Verify phone code and login/register user.
+    
+    TODO: Implement phone verification
+    - Validate code against stored code
+    - Check expiration
+    - Create user if doesn't exist
+    - Generate JWT token
+    """
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Phone authentication is not yet implemented. Please use email/password registration."
+    )
