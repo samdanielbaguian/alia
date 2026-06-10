@@ -6,6 +6,7 @@ from datetime import datetime
 from app.api.deps import get_db, get_current_user
 from app.schemas.auth import Token, LoginRequest, RegisterRequest
 from app.schemas.user import UserResponse
+from app.schemas.phone_auth import SendPhoneCodeRequest, VerifyPhoneCodeRequest
 from app.core.security import get_password_hash, verify_password, create_access_token
 
 router = APIRouter()
@@ -161,7 +162,7 @@ async def apple_auth():
 
 @router.post("/phone/send-code")
 async def send_phone_code(
-    phone_number: str,
+    request: SendPhoneCodeRequest,
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
     """
@@ -181,8 +182,7 @@ async def send_phone_code(
 
 @router.post("/phone/verify")
 async def verify_phone_code(
-    phone_number: str,
-    code: str,
+    request: VerifyPhoneCodeRequest,
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
     """
