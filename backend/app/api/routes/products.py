@@ -17,9 +17,11 @@ router = APIRouter()
 @router.get("", response_model=List[ProductResponse])
 async def get_products(
     category: Optional[str] = None,
+    merchant_id: Optional[str] = None,
     price_min: Optional[float] = None,
     price_max: Optional[float] = None,
     age_restricted: Optional[bool] = None,
+    sort: Optional[str] = Query(None, description="Sort by: price_asc, price_desc, created_at, title"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     db: AsyncIOMotorDatabase = Depends(get_db)
@@ -29,14 +31,18 @@ async def get_products(
     
     Filters:
     - category: Filter by product category
+    - merchant_id: Filter by merchant ID
     - price_min: Minimum price
     - price_max: Maximum price
     - age_restricted: Filter by age restriction
+    - sort: Sort results (price_asc, price_desc, created_at, title)
     """
     query = {}
     
     if category:
         query["category"] = category
+    if merchant_id:
+        query["merchant_id"] = merchant_id
     if price_min is not None:
         query.setdefault("price", {})["$gte"] = price_min
     if price_max is not None:
@@ -44,7 +50,27 @@ async def get_products(
     if age_restricted is not None:
         query["age_restricted"] = age_restricted
     
-    products = await db.products.find(query).skip(skip).limit(limit).to_list(length=limit)
+    # Determine sort order
+    sort_order = []
+    if sort == "price_asc":
+        sort_order.append(("price", 1))
+    elif sort == "price_desc":
+        sort_order.append(("price", -1))
+    elif sort == "title":
+        sort_order.append(("title", 1))
+    elif sort == "created_at":
+        sort_order.append(("created_at", -1))
+    else:
+        # Default sort by created_at descending
+        sort_order.append(("created_at", -1))
+    
+    products_cursor = db.products.find(query)
+    
+    # Apply sorting
+    for field, direction in sort_order:
+        products_cursor = products_cursor.sort(field, direction)
+    
+    products = await products_cursor.skip(skip).limit(limit).to_list(length=limit)
     
     return [
         ProductResponse(
