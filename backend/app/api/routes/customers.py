@@ -59,7 +59,7 @@ async def update_customer_profile(
     if update_data.preferences is not None:
         update_dict["preferences"] = update_data.preferences
     if update_data.location is not None:
-        update_dict["location"] = update_data.location.model_dump() if update_data.location else None
+        update_dict["location"] = update_data.location.model_dump()
     
     if not update_dict:
         raise HTTPException(

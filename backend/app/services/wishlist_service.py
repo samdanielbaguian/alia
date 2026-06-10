@@ -46,23 +46,17 @@ class WishlistService:
                 detail="Product not found"
             )
         
-        # Check if already in wishlist
-        user = await db.users.find_one({"_id": ObjectId(user_id)})
-        if not user:
+        # Check if product already in wishlist using MongoDB query
+        user = await db.users.find_one({
+            "_id": ObjectId(user_id),
+            "wishlist.product_id": product_id
+        })
+        
+        if user:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Product already in wishlist"
             )
-        
-        wishlist = user.get("wishlist", [])
-        
-        # Check if product already in wishlist
-        for item in wishlist:
-            if item.get("product_id") == product_id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Product already in wishlist"
-                )
         
         # Add to wishlist
         wishlist_item = {
@@ -156,36 +150,29 @@ class WishlistService:
         Raises:
             HTTPException: If product not in wishlist
         """
-        user = await db.users.find_one({"_id": ObjectId(user_id)})
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        
-        wishlist = user.get("wishlist", [])
-        
-        # Check if product in wishlist
-        found = False
-        for item in wishlist:
-            if item.get("product_id") == product_id:
-                found = True
-                break
-        
-        if not found:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Product not in wishlist"
-            )
-        
-        # Remove from wishlist
-        await db.users.update_one(
+        # Remove from wishlist using $pull (atomic operation)
+        result = await db.users.update_one(
             {"_id": ObjectId(user_id)},
             {
                 "$pull": {"wishlist": {"product_id": product_id}},
                 "$set": {"updated_at": datetime.utcnow()}
             }
         )
+        
+        # Check if any document was modified
+        if result.modified_count == 0:
+            # Verify user exists
+            user = await db.users.find_one({"_id": ObjectId(user_id)})
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found"
+                )
+            # User exists but product wasn't in wishlist
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Product not in wishlist"
+            )
         
         logger.info(f"User {user_id} removed product {product_id} from wishlist")
         

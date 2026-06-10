@@ -125,7 +125,7 @@ async def get_me(current_user: dict = Depends(get_current_user)):
     )
 
 
-@router.get("/google")
+@router.post("/google")
 async def google_auth():
     """
     Initiate Google OAuth authentication.
@@ -142,7 +142,7 @@ async def google_auth():
     )
 
 
-@router.get("/apple")
+@router.post("/apple")
 async def apple_auth():
     """
     Initiate Apple Sign In authentication.
