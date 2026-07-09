@@ -17,6 +17,11 @@ router = APIRouter()
 @router.get("", response_model=List[ProductResponse])
 async def get_products(
     category: Optional[str] = None,
+    merchant_id: Optional[str] = Query(None, description="Filter by merchant id"),
+    sort: Optional[str] = Query(
+        None,
+        description="Sort by: price_asc, price_desc, newest, oldest"
+    ),
     price_min: Optional[float] = None,
     price_max: Optional[float] = None,
     age_restricted: Optional[bool] = None,
@@ -37,14 +42,26 @@ async def get_products(
     
     if category:
         query["category"] = category
+    if merchant_id:
+        query["merchant_id"] = merchant_id
     if price_min is not None:
         query.setdefault("price", {})["$gte"] = price_min
     if price_max is not None:
         query.setdefault("price", {})["$lte"] = price_max
     if age_restricted is not None:
         query["age_restricted"] = age_restricted
-    
-    products = await db.products.find(query).skip(skip).limit(limit).to_list(length=limit)
+
+    products_cursor = db.products.find(query)
+    if sort == "price_asc":
+        products_cursor = products_cursor.sort("price", 1)
+    elif sort == "price_desc":
+        products_cursor = products_cursor.sort("price", -1)
+    elif sort == "newest":
+        products_cursor = products_cursor.sort("created_at", -1)
+    elif sort == "oldest":
+        products_cursor = products_cursor.sort("created_at", 1)
+
+    products = await products_cursor.skip(skip).limit(limit).to_list(length=limit)
     
     return [
         ProductResponse(

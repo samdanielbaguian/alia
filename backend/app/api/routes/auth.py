@@ -1,9 +1,11 @@
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import RedirectResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
-from datetime import datetime
 
 from app.api.deps import get_db, get_current_user
+from app.core.config import settings
 from app.schemas.auth import Token, LoginRequest, RegisterRequest
 from app.schemas.user import UserResponse
 from app.core.security import get_password_hash, verify_password, create_access_token
@@ -107,6 +109,109 @@ async def login(
     access_token = create_access_token(data={"sub": user_id}, role=user_role)
     
     return Token(access_token=access_token, token_type="bearer")
+
+
+@router.get("/google")
+async def auth_google():
+    """
+    Redirect endpoint kept for frontend compatibility.
+    """
+    return RedirectResponse(url=f"{settings.BASE_URL}/auth/google")
+
+
+@router.get("/apple")
+async def auth_apple():
+    """
+    Redirect endpoint kept for frontend compatibility.
+    """
+    return RedirectResponse(url=f"{settings.BASE_URL}/auth/apple")
+
+
+@router.post("/phone/send-code")
+async def send_phone_code(
+    payload: dict,
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Send a verification code to a phone number.
+    """
+    phone_number = payload.get("phone_number")
+    if not phone_number:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="phone_number is required"
+        )
+
+    code = "123456"
+    expires_at = datetime.utcnow() + timedelta(minutes=10)
+
+    await db.phone_verifications.insert_one({
+        "phone_number": phone_number,
+        "code": code,
+        "verified": False,
+        "created_at": datetime.utcnow(),
+        "expires_at": expires_at
+    })
+
+    return {
+        "message": "Verification code sent",
+        "phone_number": phone_number,
+        "expires_in_seconds": 600
+    }
+
+
+@router.post("/phone/verify")
+async def verify_phone_code(
+    payload: dict,
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Verify a phone authentication code.
+    """
+    phone_number = payload.get("phone_number")
+    code = payload.get("code")
+
+    if not phone_number or not code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="phone_number and code are required"
+        )
+
+    verification = await db.phone_verifications.find_one(
+        {
+            "phone_number": phone_number,
+            "verified": False
+        },
+        sort=[("created_at", -1)]
+    )
+
+    if not verification:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No verification request found"
+        )
+
+    if verification["expires_at"] < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification code expired"
+        )
+
+    if verification["code"] != code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid verification code"
+        )
+
+    await db.phone_verifications.update_one(
+        {"_id": verification["_id"]},
+        {"$set": {"verified": True, "verified_at": datetime.utcnow()}}
+    )
+
+    return {
+        "verified": True,
+        "phone_number": phone_number
+    }
 
 
 @router.get("/me", response_model=UserResponse)
