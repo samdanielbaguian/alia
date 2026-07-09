@@ -57,6 +57,7 @@ class Payment(BaseModel):
     platform_fee: float = Field(default=0.0, ge=0)  # Alia's commission
     payment_gateway_fee: float = Field(default=0.0, ge=0)  # Provider's fee
     merchant_payout: float = Field(default=0.0, ge=0)  # Amount merchant receives
+    shipping_fee: Optional[float] = None  # For future use if needed
     
     # Timestamps
     initiated_at: datetime = Field(default_factory=datetime.utcnow)

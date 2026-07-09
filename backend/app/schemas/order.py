@@ -33,6 +33,10 @@ class OrderProductResponse(BaseModel):
     title: str
     size: Optional[str] = None
     color: Optional[str] = None
+    sku: Optional[str] = None
+    weight: Optional[float] = None
+    dimensions: Optional[str] = None
+    material: Optional[str] = None
 
 
 class StatusHistoryResponse(BaseModel):
@@ -62,6 +66,15 @@ class OrderResponse(BaseModel):
     tracking_number: Optional[str] = None
     shipped_at: Optional[datetime] = None
     delivered_at: Optional[datetime] = None
+    # Admin approval fields
+    payment_approved: Optional[bool] = None
+    payment_approved_by: Optional[str] = None
+    payment_approved_at: Optional[datetime] = None
+    payment_rejection_reason: Optional[str] = None
+    shipping_approved: Optional[bool] = None
+    shipping_approved_by: Optional[str] = None
+    shipping_approved_at: Optional[datetime] = None
+    shipping_rejection_reason: Optional[str] = None
     
     class Config:
         from_attributes = True

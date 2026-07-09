@@ -39,6 +39,10 @@ class OrderProduct(BaseModel):
     title: str
     size: Optional[str] = None  # Product size at time of order
     color: Optional[str] = None  # Product color at time of order
+    sku: Optional[str] = None  # Product SKU at time of order
+    weight: Optional[float] = None  # Product weight at time of order
+    dimensions: Optional[str] = None  # Product dimensions at time of order
+    material: Optional[str] = None  # Product material at time of order
 
 
 class Order(BaseModel):
@@ -75,7 +79,11 @@ class Order(BaseModel):
                         "price": 299.99,
                         "title": "Smartphone XYZ",
                         "size": "6.5 inches",
-                        "color": "Midnight Black"
+                        "color": "Midnight Black",
+                        "sku": "SMART-XYZ-128GB",
+                        "weight": 0.195,
+                        "dimensions": "15.5 x 7.5 x 0.8 cm",
+                        "material": "Aluminum and Glass"
                     }
                 ],
                 "total_amount": 599.98,

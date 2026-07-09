@@ -1,0 +1,7 @@
+export default {
+  extends: ['next/core-web-vitals'],
+  rules: {
+    'react/no-unescaped-entities': 'warn',
+    '@next/next/no-html-link-for-pages': 'off',
+  },
+};

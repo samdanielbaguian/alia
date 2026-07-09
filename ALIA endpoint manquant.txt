@@ -1,0 +1,24 @@
+📋 Liste of missing endpoinds (frontend → backend)
+
+
+#	Endpoint frontend		                                            relevant pages
+1	/api/cart/add	POST		                                            products/[id]/page.js
+2	/api/customers/me/wishlist GET                                              products/[id]/page.js
+3	/api/customers/me/wishlist POST		                                    products/[id]/page.js
+4	/api/customers/me/wishlist/${id} DELETE		                            products/[id]/page.js
+5	/api/merchants/me	GET      	                                    dashboard/settings/page.js
+6	/api/merchants/me/products	GET	                                    dashboard/reports, merchant/reports
+7	/api/products?merchant_id=X&sort=Y GET	                                    merchant/products, merchant/alerts
+8	/api/auth/google	GET (redirect) 	                                    login/page.js, register/page.js
+9	/api/auth/apple	GET (redirect)	                                            login/page.js, register/page.js
+10	/api/auth/phone/send-code	POST	                                    login/page.js
+11	/api/auth/phone/verify	POST	                                            login/page.js
+12	/api/merchants/me/orders (params skip, period, search, sort)	GET	    merchant/orders/page.js
+13	/api/orders/me	GET	                                                    customer/orders/page.js
+14	/api/orders/me/${id}	GET	                                            customer/orders/[id]/page.js
+15	/api/cart	GET	                                                    customer/cart/page.js
+16	/api/cart/items/${id}	PUT/DELETE	                                    customer/cart/page.js
+17	/api/orders/from-cart	POST		                                    customer/cart/page.js
+18	/api/customers/me	GET/PUT		                                    customer/profile/page.js
+19	/api/payments	GET		                                            customer/payments/page.js
+20	/api/merchants (liste publique)	GET		                            customer/shops/page.js

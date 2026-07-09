@@ -71,6 +71,7 @@ class ShareService:
             
             if product:
                 cart_snapshot.append({
+                    "cart_item_id": item.get("_id"),
                     "product_id": item["product_id"],
                     "quantity": item["quantity"],
                     "price_at_share": product["price"],
@@ -216,7 +217,9 @@ class ShareService:
                     break
             
             if not item_exists:
+                cart_item_id = str(ObjectId())
                 cart["items"].append({
+                    "_id": cart_item_id,
                     "product_id": item["product_id"],
                     "quantity": item["quantity"],
                     "price_at_add": product["price"],

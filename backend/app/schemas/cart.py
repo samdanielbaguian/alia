@@ -31,6 +31,7 @@ class UpdateCartItemRequest(BaseModel):
 
 class CartItemResponse(BaseModel):
     """Schema for cart item response."""
+    id: Optional[str] = None
     product_id: str
     quantity: int
     price_at_add: float

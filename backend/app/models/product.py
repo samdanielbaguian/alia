@@ -14,7 +14,7 @@ class Product(BaseModel):
     original_price: Optional[float] = None  # For imported products with margin
     images: List[str] = Field(default_factory=list)
     stock: int = Field(ge=0)
-    category: str
+    category: str #rappel que je dois ajouter une list des categories dans la db
     merchant_id: str
     is_imported: bool = False
     source_platform: Optional[str] = None  # "AliExpress" or "Alibaba"
@@ -44,6 +44,10 @@ class Product(BaseModel):
                 "stock": 50,
                 "category": "electronics",
                 "merchant_id": "merchant123",
+                "location": {
+                    "lat": 5.36, 
+                    "lng": -4.0083
+                },
                 "is_imported": True,
                 "source_platform": "AliExpress",
                 "delivery_days": 14,

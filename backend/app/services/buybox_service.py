@@ -47,8 +47,8 @@ async def calculate_buybox_winner(product_title: str, user_location:  Optional[D
     matching_products = []
     for product in all_products:
         product_title_words = set(product["title"].lower().split())
-        search_title_words = set(title_words)
-        
+        search_title_words = set(title_words) 
+
         # Check if there's significant overlap in words
         common_words = len(product_title_words.intersection(search_title_words))
         if common_words >= min(2, len(search_title_words) * 0.5):

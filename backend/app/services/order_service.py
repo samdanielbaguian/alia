@@ -1,10 +1,10 @@
 """
 Order service for managing order business logic and status transitions.
 """
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Tuple
 from datetime import datetime
-from fastapi import HTTPException, status
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from starlette import status
+from starlette.exceptions import HTTPException
 from bson import ObjectId
 import logging
 
@@ -24,13 +24,13 @@ class OrderService:
     }
     
     @staticmethod
-    async def get_merchant_by_user_id(user_id: str, db: AsyncIOMotorDatabase) -> Optional[dict]:
+    async def get_merchant_by_user_id(user_id: str, db) -> Optional[dict]:
         """Get merchant profile by user_id."""
         merchant = await db.merchants.find_one({"user_id": user_id})
         return merchant
     
     @staticmethod
-    async def verify_order_access(order: dict, user_id: str, user_role: str, db: AsyncIOMotorDatabase) -> bool:
+    async def verify_order_access(order: dict, user_id: str, user_role: str, db) -> bool:
         """
         Verify user has permission to access/modify this order.
         - Customers can only access their own orders
@@ -77,7 +77,7 @@ class OrderService:
         new_status: str,
         user_id: str,
         user_role: str,
-        db: AsyncIOMotorDatabase
+        db
     ) -> Tuple[bool, Optional[str]]:
         """
         Check if user has permission to change order to new status.
@@ -127,7 +127,7 @@ class OrderService:
         new_status: str,
         user_id: str,
         user_role: str,
-        db: AsyncIOMotorDatabase,
+        db,
         note: Optional[str] = None,
         tracking_number: Optional[str] = None,
         cancelled_by: Optional[str] = None,
@@ -224,7 +224,7 @@ class OrderService:
         }
     
     @staticmethod
-    async def restore_product_stock(order: dict, db: AsyncIOMotorDatabase):
+    async def restore_product_stock(order: dict, db):
         """Restore product stock when order is cancelled."""
         for product in order["products"]:
             try:
@@ -261,7 +261,7 @@ class OrderService:
         return []
     
     @staticmethod
-    async def can_cancel_order(order_id: str, user_id: str, user_role: str, db: AsyncIOMotorDatabase) -> Tuple[bool, Optional[str]]:
+    async def can_cancel_order(order_id: str, user_id: str, user_role: str, db) -> Tuple[bool, Optional[str]]:
         """Check if user can cancel this order."""
         try:
             order = await db.orders.find_one({"_id": ObjectId(order_id)})

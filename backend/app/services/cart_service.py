@@ -1,6 +1,7 @@
-from typing import List, Optional, Dict
+from __future__ import annotations
+
+from typing import List, Optional, Dict, TYPE_CHECKING
 from datetime import datetime, timedelta
-from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException, status
@@ -8,12 +9,15 @@ from fastapi import HTTPException, status
 from app.models.cart import CartItem
 from app.schemas.cart import CartItemResponse
 
+if TYPE_CHECKING:
+    from motor.motor_asyncio import AsyncIOMotorDatabase
+
 
 class CartService:
     """Service for cart operations."""
     
     @staticmethod
-    async def get_or_create_cart(user_id: str, db: AsyncIOMotorDatabase) -> dict:
+    async def get_or_create_cart(user_id: str, db: "AsyncIOMotorDatabase") -> dict:
         """Get or create a cart for a user."""
         cart = await db.carts.find_one({"user_id": user_id})
         
@@ -36,7 +40,7 @@ class CartService:
         user_id: str,
         product_id: str,
         quantity: int,
-        db: AsyncIOMotorDatabase
+        db: "AsyncIOMotorDatabase"
     ) -> dict:
         """Add an item to the cart."""
         # Validate product exists
@@ -81,7 +85,9 @@ class CartService:
         
         if not item_exists:
             # Add new item
+            cart_item_id = str(ObjectId())
             cart["items"].append({
+                "_id": cart_item_id,
                 "product_id": product_id,
                 "quantity": quantity,
                 "price_at_add": product["price"],
@@ -101,7 +107,7 @@ class CartService:
         return cart
     
     @staticmethod
-    async def get_cart_with_details(user_id: str, db: AsyncIOMotorDatabase) -> Dict:
+    async def get_cart_with_details(user_id: str, db: "AsyncIOMotorDatabase") -> Dict:
         """Get cart with full product details."""
         cart = await CartService.get_or_create_cart(user_id, db)
         
@@ -124,6 +130,7 @@ class CartService:
             total_amount += subtotal
             
             items_response.append(CartItemResponse(
+                id=item.get("_id"),
                 product_id=item["product_id"],
                 quantity=item["quantity"],
                 price_at_add=price_at_add,
@@ -147,7 +154,7 @@ class CartService:
         user_id: str,
         item_id: str,
         quantity: int,
-        db: AsyncIOMotorDatabase
+        db: "AsyncIOMotorDatabase"
     ) -> dict:
         """Update item quantity in cart."""
         cart = await CartService.get_or_create_cart(user_id, db)
@@ -155,10 +162,10 @@ class CartService:
         # Find item in cart
         item_found = False
         for item in cart["items"]:
-            if item["product_id"] == item_id:
+            if item.get("_id") == item_id:
                 # Validate stock
                 try:
-                    product = await db.products.find_one({"_id": ObjectId(item_id)})
+                    product = await db.products.find_one({"_id": ObjectId(item["product_id"])})
                 except InvalidId:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
@@ -203,14 +210,14 @@ class CartService:
     async def remove_item(
         user_id: str,
         item_id: str,
-        db: AsyncIOMotorDatabase
+        db: "AsyncIOMotorDatabase"
     ) -> dict:
         """Remove item from cart."""
         cart = await CartService.get_or_create_cart(user_id, db)
         
         # Remove item
         original_length = len(cart["items"])
-        cart["items"] = [item for item in cart["items"] if item["product_id"] != item_id]
+        cart["items"] = [item for item in cart["items"] if item.get("_id") != item_id]
         
         if len(cart["items"]) == original_length:
             raise HTTPException(
@@ -231,7 +238,7 @@ class CartService:
         return await CartService.get_cart_with_details(user_id, db)
     
     @staticmethod
-    async def clear_cart(user_id: str, db: AsyncIOMotorDatabase) -> dict:
+    async def clear_cart(user_id: str, db: "AsyncIOMotorDatabase") -> dict:
         """Clear all items from cart."""
         cart = await CartService.get_or_create_cart(user_id, db)
         
@@ -253,7 +260,7 @@ class CartService:
         }
     
     @staticmethod
-    async def validate_cart_for_order(user_id: str, db: AsyncIOMotorDatabase) -> List[dict]:
+    async def validate_cart_for_order(user_id: str, db: "AsyncIOMotorDatabase") -> List[dict]:
         """Validate cart items are available for order."""
         cart = await CartService.get_or_create_cart(user_id, db)
         
