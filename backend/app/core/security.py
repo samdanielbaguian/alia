@@ -35,6 +35,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None, r
     if role is not None:
         to_encode["role"] = role
     
+
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:

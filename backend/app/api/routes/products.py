@@ -17,14 +17,11 @@ router = APIRouter()
 @router.get("", response_model=List[ProductResponse])
 async def get_products(
     category: Optional[str] = None,
-    merchant_id: Optional[str] = Query(None, description="Filter by merchant id"),
-    sort: Optional[str] = Query(
-        None,
-        description="Sort by: price_asc, price_desc, newest, oldest"
-    ),
+    merchant_id: Optional[str] = None,
     price_min: Optional[float] = None,
     price_max: Optional[float] = None,
     age_restricted: Optional[bool] = None,
+    sort: Optional[str] = Query(None, description="Sort by: price_asc, price_desc, created_at, title"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     db: AsyncIOMotorDatabase = Depends(get_db)
@@ -34,9 +31,11 @@ async def get_products(
     
     Filters:
     - category: Filter by product category
+    - merchant_id: Filter by merchant ID
     - price_min: Minimum price
     - price_max: Maximum price
     - age_restricted: Filter by age restriction
+    - sort: Sort results (price_asc, price_desc, created_at, title)
     """
     query = {}
     
@@ -50,17 +49,27 @@ async def get_products(
         query.setdefault("price", {})["$lte"] = price_max
     if age_restricted is not None:
         query["age_restricted"] = age_restricted
-
-    products_cursor = db.products.find(query)
+    
+    # Determine sort order
+    sort_order = []
     if sort == "price_asc":
-        products_cursor = products_cursor.sort("price", 1)
+        sort_order.append(("price", 1))
     elif sort == "price_desc":
-        products_cursor = products_cursor.sort("price", -1)
-    elif sort == "newest":
-        products_cursor = products_cursor.sort("created_at", -1)
-    elif sort == "oldest":
-        products_cursor = products_cursor.sort("created_at", 1)
-
+        sort_order.append(("price", -1))
+    elif sort == "title":
+        sort_order.append(("title", 1))
+    elif sort == "created_at":
+        sort_order.append(("created_at", -1))
+    else:
+        # Default sort by created_at descending
+        sort_order.append(("created_at", -1))
+    
+    products_cursor = db.products.find(query)
+    
+    # Apply sorting
+    for field, direction in sort_order:
+        products_cursor = products_cursor.sort(field, direction)
+    
     products = await products_cursor.skip(skip).limit(limit).to_list(length=limit)
     
     return [

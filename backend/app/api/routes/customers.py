@@ -1,140 +1,126 @@
-from datetime import datetime
-
-from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from pydantic import BaseModel
+from bson import ObjectId
+from datetime import datetime
 
-from app.api.deps import get_current_user, get_db
-from app.schemas.user import UserUpdate
+from app.api.deps import get_db, get_current_user
+from app.schemas.wishlist import (
+    AddToWishlistRequest,
+    WishlistResponse
+)
+from app.schemas.user import UserResponse, UserUpdate
+from app.services.wishlist_service import WishlistService
 
 router = APIRouter()
 
 
-class WishlistRequest(BaseModel):
-    product_id: str
-
-
-@router.get("/me")
+@router.get("/me", response_model=UserResponse)
 async def get_customer_profile(
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db)
 ):
-    """Get the current customer profile."""
-    return {
-        "id": str(current_user["_id"]),
-        "email": current_user["email"],
-        "role": current_user["role"],
-        "age": current_user.get("age"),
-        "preferences": current_user.get("preferences", []),
-        "good_rate": current_user.get("good_rate", 50.0),
-        "location": current_user.get("location"),
-        "wishlist": current_user.get("wishlist", []),
-        "created_at": current_user["created_at"]
-    }
+    """
+    Get the current customer's profile.
+    
+    Returns complete user information including preferences and location.
+    """
+    return UserResponse(
+        id=str(current_user["_id"]),
+        email=current_user["email"],
+        role=current_user["role"],
+        age=current_user.get("age"),
+        preferences=current_user.get("preferences", []),
+        good_rate=current_user.get("good_rate", 50.0),
+        location=current_user.get("location"),
+        created_at=current_user["created_at"]
+    )
 
 
-@router.put("/me")
+@router.put("/me", response_model=UserResponse)
 async def update_customer_profile(
-    request: UserUpdate,
+    update_data: UserUpdate,
     current_user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
-    """Update customer profile fields."""
-    update_fields = request.model_dump(exclude_none=True)
-    if not update_fields:
+    """
+    Update the current customer's profile.
+    
+    Allows updating:
+    - age
+    - preferences
+    - location
+    """
+    user_id = str(current_user["_id"])
+    
+    # Build update document
+    update_dict = {}
+    if update_data.age is not None:
+        update_dict["age"] = update_data.age
+    if update_data.preferences is not None:
+        update_dict["preferences"] = update_data.preferences
+    if update_data.location is not None:
+        update_dict["location"] = update_data.location.model_dump()
+    
+    if not update_dict:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No fields provided for update"
+            detail="No fields to update"
         )
-
-    update_fields["updated_at"] = datetime.utcnow()
+    
+    update_dict["updated_at"] = datetime.utcnow()
+    
+    # Update user
     await db.users.update_one(
-        {"_id": current_user["_id"]},
-        {"$set": update_fields}
+        {"_id": ObjectId(user_id)},
+        {"$set": update_dict}
+    )
+    
+    # Fetch updated user
+    updated_user = await db.users.find_one({"_id": ObjectId(user_id)})
+    
+    return UserResponse(
+        id=str(updated_user["_id"]),
+        email=updated_user["email"],
+        role=updated_user["role"],
+        age=updated_user.get("age"),
+        preferences=updated_user.get("preferences", []),
+        good_rate=updated_user.get("good_rate", 50.0),
+        location=updated_user.get("location"),
+        created_at=updated_user["created_at"]
     )
 
-    updated_user = await db.users.find_one({"_id": current_user["_id"]})
-    return {
-        "id": str(updated_user["_id"]),
-        "email": updated_user["email"],
-        "role": updated_user["role"],
-        "age": updated_user.get("age"),
-        "preferences": updated_user.get("preferences", []),
-        "good_rate": updated_user.get("good_rate", 50.0),
-        "location": updated_user.get("location"),
-        "wishlist": updated_user.get("wishlist", []),
-        "created_at": updated_user["created_at"]
-    }
 
-
-@router.get("/me/wishlist")
-async def get_my_wishlist(
+@router.get("/me/wishlist", response_model=WishlistResponse)
+async def get_wishlist(
     current_user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
-    """Get wishlist products for current customer."""
-    wishlist_ids = current_user.get("wishlist", [])
-    object_ids = []
-    for product_id in wishlist_ids:
-        try:
-            object_ids.append(ObjectId(product_id))
-        except Exception:
-            continue
-
-    if not object_ids:
-        return {"wishlist": [], "total": 0}
-
-    products = await db.products.find({"_id": {"$in": object_ids}}).to_list(length=len(object_ids))
-    ordered_products = {str(product["_id"]): product for product in products}
-
-    return {
-        "wishlist": [
-            {
-                "id": product_id,
-                "title": ordered_products[product_id]["title"],
-                "price": ordered_products[product_id]["price"],
-                "images": ordered_products[product_id].get("images", []),
-                "stock": ordered_products[product_id].get("stock", 0),
-                "merchant_id": ordered_products[product_id].get("merchant_id")
-            }
-            for product_id in wishlist_ids
-            if product_id in ordered_products
-        ],
-        "total": len([product_id for product_id in wishlist_ids if product_id in ordered_products])
-    }
+    """
+    Get the current user's wishlist with full product details.
+    
+    Returns:
+    - All wishlist items with current product information
+    - Total items count
+    """
+    user_id = str(current_user["_id"])
+    return await WishlistService.get_wishlist(user_id, db)
 
 
-@router.post("/me/wishlist")
+@router.post("/me/wishlist", status_code=status.HTTP_201_CREATED)
 async def add_to_wishlist(
-    request: WishlistRequest,
+    request: AddToWishlistRequest,
     current_user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
-    """Add a product to customer wishlist."""
-    try:
-        product = await db.products.find_one({"_id": ObjectId(request.product_id)})
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid product ID"
-        )
-
-    if not product:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Product not found"
-        )
-
-    await db.users.update_one(
-        {"_id": current_user["_id"]},
-        {"$addToSet": {"wishlist": request.product_id}}
-    )
-
-    updated_user = await db.users.find_one({"_id": current_user["_id"]})
-    return {
-        "message": "Product added to wishlist",
-        "wishlist": updated_user.get("wishlist", [])
-    }
+    """
+    Add a product to the current user's wishlist.
+    
+    Validates:
+    - Product exists
+    - Not already in wishlist
+    """
+    user_id = str(current_user["_id"])
+    return await WishlistService.add_to_wishlist(user_id, request.product_id, db)
 
 
 @router.delete("/me/wishlist/{product_id}")
@@ -143,14 +129,8 @@ async def remove_from_wishlist(
     current_user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
-    """Remove a product from customer wishlist."""
-    await db.users.update_one(
-        {"_id": current_user["_id"]},
-        {"$pull": {"wishlist": product_id}}
-    )
-
-    updated_user = await db.users.find_one({"_id": current_user["_id"]})
-    return {
-        "message": "Product removed from wishlist",
-        "wishlist": updated_user.get("wishlist", [])
-    }
+    """
+    Remove a product from the current user's wishlist.
+    """
+    user_id = str(current_user["_id"])
+    return await WishlistService.remove_from_wishlist(user_id, product_id, db)

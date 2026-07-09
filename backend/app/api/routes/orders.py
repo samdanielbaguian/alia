@@ -258,32 +258,6 @@ async def get_orders(
     }
 
 
-@router.get("/me", response_model=dict)
-async def get_my_orders(
-    status_filter: Optional[str] = Query(None, alias="status", description="Filter by order status"),
-    skip: int = Query(0, ge=0, alias="skip"),
-    limit: int = Query(50, ge=1, le=100),
-    current_user: dict = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db)
-):
-    """
-    Buyer-focused alias for compatibility with /api/orders/me.
-    """
-    if current_user.get("role") != "buyer":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only buyers can access this endpoint"
-        )
-
-    return await get_orders(
-        status_filter=status_filter,
-        skip=skip,
-        limit=limit,
-        current_user=current_user,
-        db=db
-    )
-
-
 @router.get("/{order_id}", response_model=OrderResponse)
 async def get_order(
     order_id: str,
@@ -350,28 +324,6 @@ async def get_order(
         tracking_number=order.get("tracking_number"),
         shipped_at=order.get("shipped_at"),
         delivered_at=order.get("delivered_at")
-    )
-
-
-@router.get("/me/{order_id}", response_model=OrderResponse)
-async def get_my_order(
-    order_id: str,
-    current_user: dict = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db)
-):
-    """
-    Buyer-focused alias for compatibility with /api/orders/me/{id}.
-    """
-    if current_user.get("role") != "buyer":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only buyers can access this endpoint"
-        )
-
-    return await get_order(
-        order_id=order_id,
-        current_user=current_user,
-        db=db
     )
 
 
@@ -729,4 +681,134 @@ async def get_order_history(
         history=[
             StatusHistoryResponse(**h) for h in order.get("status_history", [])
         ]
+    )
+
+
+@router.get("/me", response_model=dict)
+async def get_my_orders(
+    status_filter: Optional[str] = Query(None, alias="status", description="Filter by order status"),
+    skip: int = Query(0, ge=0, alias="offset"),
+    limit: int = Query(50, ge=1, le=100),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Get the current user's orders (as a customer).
+    
+    This endpoint specifically returns orders that the customer (buyer) has placed.
+    Use /api/merchants/me/orders for merchant orders.
+    """
+    user_id = str(current_user["_id"])
+    
+    # Build filter query
+    filter_query = {"user_id": user_id}
+    
+    # Add status filter if provided
+    if status_filter:
+        filter_query["status"] = status_filter
+    
+    # Query with pagination
+    orders = await db.orders.find(filter_query).skip(skip).limit(limit).to_list(length=limit)
+    total = await db.orders.count_documents(filter_query)
+    
+    return {
+        "orders": [
+            OrderResponse(
+                id=str(order["_id"]),
+                user_id=order["user_id"],
+                merchant_id=order["merchant_id"],
+                products=[
+                    OrderProductResponse(
+                        product_id=p["product_id"],
+                        quantity=p["quantity"],
+                        price=p["price"],
+                        title=p["title"],
+                        size=p.get("size"),
+                        color=p.get("color"),
+                        sku=p.get("sku"),
+                        weight=p.get("weight"),
+                        dimensions=p.get("dimensions"),
+                        material=p.get("material")
+                    )
+                    for p in order["products"]
+                ],
+                total_amount=order["total_amount"],
+                status=order["status"],
+                payment_method=order["payment_method"],
+                created_at=order["created_at"],
+                updated_at=order.get("updated_at", order["created_at"]),
+                status_history=[
+                    StatusHistoryResponse(**h) for h in order.get("status_history", [])
+                ] if order.get("status_history") else None,
+                cancelled_by=order.get("cancelled_by"),
+                cancellation_reason=order.get("cancellation_reason"),
+                tracking_number=order.get("tracking_number"),
+                shipped_at=order.get("shipped_at"),
+                delivered_at=order.get("delivered_at")
+            )
+            for order in orders
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": skip
+    }
+
+
+@router.get("/me/{order_id}", response_model=OrderResponse)
+async def get_my_order(
+    order_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Get a specific order by ID (must be owned by current user).
+    """
+    user_id = str(current_user["_id"])
+    
+    try:
+        order = await db.orders.find_one({"_id": ObjectId(order_id), "user_id": user_id})
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid order ID"
+        )
+    
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found or you don't have permission to view it"
+        )
+    
+    return OrderResponse(
+        id=str(order["_id"]),
+        user_id=order["user_id"],
+        merchant_id=order["merchant_id"],
+        products=[
+            OrderProductResponse(
+                product_id=p["product_id"],
+                quantity=p["quantity"],
+                price=p["price"],
+                title=p["title"],
+                size=p.get("size"),
+                color=p.get("color"),
+                sku=p.get("sku"),
+                weight=p.get("weight"),
+                dimensions=p.get("dimensions"),
+                material=p.get("material")
+            )
+            for p in order["products"]
+        ],
+        total_amount=order["total_amount"],
+        status=order["status"],
+        payment_method=order["payment_method"],
+        created_at=order["created_at"],
+        updated_at=order.get("updated_at", order["created_at"]),
+        status_history=[
+            StatusHistoryResponse(**h) for h in order.get("status_history", [])
+        ] if order.get("status_history") else None,
+        cancelled_by=order.get("cancelled_by"),
+        cancellation_reason=order.get("cancellation_reason"),
+        tracking_number=order.get("tracking_number"),
+        shipped_at=order.get("shipped_at"),
+        delivered_at=order.get("delivered_at")
     )
