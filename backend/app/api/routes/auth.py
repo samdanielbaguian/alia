@@ -1,7 +1,7 @@
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
-from datetime import datetime
 
 from app.api.deps import get_db, get_current_user
 from app.schemas.auth import Token, LoginRequest, RegisterRequest
@@ -70,8 +70,8 @@ async def register(
         }
         await db.merchants.insert_one(merchant_data)
     
-    # Create access token
-    access_token = create_access_token(data={"sub": user_id})
+    # Create access token with role
+    access_token = create_access_token(data={"sub": user_id}, role=request.role)
     
     return Token(access_token=access_token, token_type="bearer")
 
@@ -102,9 +102,10 @@ async def login(
             detail="Incorrect email or password"
         )
     
-    # Create access token
+    # Create access token with role
     user_id = str(user["_id"])
-    access_token = create_access_token(data={"sub": user_id})
+    user_role = user.get("role", "buyer")
+    access_token = create_access_token(data={"sub": user_id}, role=user_role)
     
     return Token(access_token=access_token, token_type="bearer")
 
