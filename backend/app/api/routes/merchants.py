@@ -1,4 +1,5 @@
 from typing import Dict, Optional
+import re
 from datetime import datetime, date, timedelta
 import calendar
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -21,6 +22,132 @@ from app.services.share_service import ShareService
 from app.services.order_service import OrderService
 
 router = APIRouter()
+
+
+@router.get("")
+async def list_merchants(
+    search: Optional[str] = Query(None, description="Search by shop name"),
+    sort: Optional[str] = Query(
+        None,
+        description="Sort by: rating_desc, rating_asc, newest, oldest"
+    ),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """Public list of merchants."""
+    query = {}
+    if search:
+        query["shop_name"] = {"$regex": search, "$options": "i"}
+
+    merchants_cursor = db.merchants.find(query)
+    if sort == "rating_desc":
+        merchants_cursor = merchants_cursor.sort("rating", -1)
+    elif sort == "rating_asc":
+        merchants_cursor = merchants_cursor.sort("rating", 1)
+    elif sort == "newest":
+        merchants_cursor = merchants_cursor.sort("created_at", -1)
+    elif sort == "oldest":
+        merchants_cursor = merchants_cursor.sort("created_at", 1)
+    else:
+        merchants_cursor = merchants_cursor.sort("created_at", -1)
+
+    merchants = await merchants_cursor.skip(offset).limit(limit).to_list(length=limit)
+    total = await db.merchants.count_documents(query)
+
+    return {
+        "merchants": [
+            {
+                "id": str(merchant["_id"]),
+                "user_id": merchant["user_id"],
+                "shop_name": merchant["shop_name"],
+                "description": merchant.get("description", ""),
+                "location": merchant.get("location"),
+                "rating": merchant.get("rating", 50.0),
+                "total_sales": merchant.get("total_sales", 0.0),
+                "created_at": merchant["created_at"]
+            }
+            for merchant in merchants
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }
+
+
+@router.get("/me")
+async def get_my_merchant_profile(
+    current_user: dict = Depends(get_current_merchant),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """Get the authenticated merchant profile."""
+    user_id = str(current_user["_id"])
+    merchant = await db.merchants.find_one({"user_id": user_id})
+
+    if not merchant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Merchant profile not found"
+        )
+
+    return {
+        "id": str(merchant["_id"]),
+        "user_id": merchant["user_id"],
+        "shop_name": merchant["shop_name"],
+        "description": merchant.get("description", ""),
+        "location": merchant.get("location"),
+        "total_sales": merchant.get("total_sales", 0.0),
+        "rating": merchant.get("rating", 50.0),
+        "created_at": merchant["created_at"]
+    }
+
+
+@router.get("/me/products")
+async def get_my_products(
+    sort: Optional[str] = Query(
+        None,
+        description="Sort by: newest, oldest, price_asc, price_desc"
+    ),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: dict = Depends(get_current_merchant),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """Get products for authenticated merchant."""
+    user_id = str(current_user["_id"])
+    products_cursor = db.products.find({"merchant_id": user_id})
+
+    if sort == "oldest":
+        products_cursor = products_cursor.sort("created_at", 1)
+    elif sort == "price_asc":
+        products_cursor = products_cursor.sort("price", 1)
+    elif sort == "price_desc":
+        products_cursor = products_cursor.sort("price", -1)
+    else:
+        products_cursor = products_cursor.sort("created_at", -1)
+
+    products = await products_cursor.skip(offset).limit(limit).to_list(length=limit)
+    total = await db.products.count_documents({"merchant_id": user_id})
+
+    return {
+        "products": [
+            {
+                "id": str(product["_id"]),
+                "title": product["title"],
+                "description": product.get("description", ""),
+                "price": product["price"],
+                "stock": product.get("stock", 0),
+                "category": product.get("category"),
+                "images": product.get("images", []),
+                "created_at": product["created_at"],
+                "updated_at": product.get("updated_at", product["created_at"])
+            }
+            for product in products
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }
 
 
 @router.get("/{merchant_id}")
@@ -46,6 +173,65 @@ async def get_merchant(
         "total_sales": merchant.get("total_sales", 0.0),
         "rating": merchant.get("rating", 50.0),
         "created_at": merchant["created_at"]
+    }
+
+
+@router.get("/by-slug/{slug}")
+async def get_merchant_by_slug(
+    slug: str,
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """Public: Find merchant by slugified shop name (case-insensitive).
+
+    Returns safe, public merchant info and a small sample of products.
+    """
+    # Basic regex search on shop_name (case-insensitive)
+    merchant = await db.merchants.find_one({"shop_name": {"$regex": f"^{slug}$", "$options": "i"}})
+
+    if not merchant:
+        # Try partial match
+        merchant = await db.merchants.find_one({"shop_name": {"$regex": slug, "$options": "i"}})
+
+    if not merchant:
+        # Fallback: normalize slug into a flexible regex that matches spaces/hyphens/underscores between words
+        # e.g. 'chaussures-premium-ci' -> '^chaussures[\s\-_]*premium[\s\-_]*ci$'
+        normalized = slug.lower()
+        parts = [re.escape(p) for p in re.split(r'[^a-z0-9]+', normalized) if p]
+        if parts:
+            inter = r"[\s\-_]*"
+            pattern = r"^" + inter.join(parts) + r"$"
+            merchant = await db.merchants.find_one({"shop_name": {"$regex": pattern, "$options": "i"}})
+
+    if not merchant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Merchant not found"
+        )
+
+    # Get a sample of merchant products (public fields only)
+    products = await db.products.find({"merchant_id": merchant["user_id"]}).limit(50).to_list(length=50)
+    public_products = [
+        {
+            "id": str(p["_id"]),
+            "title": p["title"],
+            "price": p["price"],
+            "images": p.get("images", []),
+            "sku": p.get("sku")
+        }
+        for p in products
+    ]
+
+    return {
+        "id": str(merchant["_id"]),
+        "user_id": merchant["user_id"],
+        "shop_name": merchant["shop_name"],
+        "description": merchant.get("description", ""),
+        "location": merchant.get("location"),
+        "total_sales": merchant.get("total_sales", 0.0),
+        "rating": merchant.get("rating", 50.0),
+        "created_at": merchant["created_at"],
+        "products_count": len(public_products),
+        "products": public_products
     }
 
 
@@ -288,6 +474,13 @@ async def get_merchant_orders(
     status_filter: Optional[str] = Query(None, alias="status", description="Filter by order status"),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    skip: Optional[int] = Query(None, ge=0, alias="skip"),
+    period: Optional[str] = Query(None, description="today, 7d, 30d, this_month"),
+    search: Optional[str] = Query(None, description="Order id or product title"),
+    sort: Optional[str] = Query(
+        None,
+        description="Sort by: newest, oldest, total_amount_asc, total_amount_desc"
+    ),
     current_user: dict = Depends(get_current_merchant),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
@@ -310,15 +503,52 @@ async def get_merchant_orders(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Merchant profile not found"
         )
-    
+
+    current_offset = skip if skip is not None else offset
+
     # Build filter query
     filter_query = {"merchant_id": merchant["user_id"]}
-    
+
     if status_filter:
         filter_query["status"] = status_filter
-    
+
+    if period:
+        now = datetime.utcnow()
+        if period == "today":
+            start_date = datetime(now.year, now.month, now.day)
+        elif period == "7d":
+            start_date = now - timedelta(days=7)
+        elif period == "30d":
+            start_date = now - timedelta(days=30)
+        elif period == "this_month":
+            start_date = datetime(now.year, now.month, 1)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid period. Use one of: today, 7d, 30d, this_month"
+            )
+        filter_query["created_at"] = {"$gte": start_date}
+
+    if search:
+        search_filters = [{"products.title": {"$regex": search, "$options": "i"}}]
+        try:
+            search_filters.append({"_id": ObjectId(search)})
+        except (InvalidId, TypeError):
+            pass
+        filter_query["$or"] = search_filters
+
     # Query orders with pagination
-    orders = await db.orders.find(filter_query).skip(offset).limit(limit).to_list(length=limit)
+    orders_cursor = db.orders.find(filter_query)
+    if sort == "oldest":
+        orders_cursor = orders_cursor.sort("created_at", 1)
+    elif sort == "total_amount_asc":
+        orders_cursor = orders_cursor.sort("total_amount", 1)
+    elif sort == "total_amount_desc":
+        orders_cursor = orders_cursor.sort("total_amount", -1)
+    else:
+        orders_cursor = orders_cursor.sort("created_at", -1)
+
+    orders = await orders_cursor.skip(current_offset).limit(limit).to_list(length=limit)
     total = await db.orders.count_documents(filter_query)
     
     # Build order responses
@@ -358,7 +588,7 @@ async def get_merchant_orders(
         "orders": order_responses,
         "total": total,
         "limit": limit,
-        "offset": offset
+        "offset": current_offset
     }
 
 

@@ -83,7 +83,11 @@ async def create_order(
             "price": product["price"],
             "title": product["title"],
             "size": product.get("size"),
-            "color": product.get("color")
+            "color": product.get("color"),
+            "sku": product.get("sku"),
+            "weight": product.get("weight"),
+            "dimensions": product.get("dimensions"),
+            "material": product.get("material")
         })
     
     # Process payment
@@ -148,7 +152,11 @@ async def create_order(
                 price=p["price"],
                 title=p["title"],
                 size=p.get("size"),
-                color=p.get("color")
+                color=p.get("color"),
+                sku=p.get("sku"),
+                weight=p.get("weight"),
+                dimensions=p.get("dimensions"),
+                material=p.get("material")
             )
             for p in order_data["products"]
         ],
@@ -219,9 +227,13 @@ async def get_orders(
                         quantity=p["quantity"],
                         price=p["price"],
                         title=p["title"],
-                size=p.get("size"),
-                color=p.get("color")
-            )
+                        size=p.get("size"),
+                        color=p.get("color"),
+                        sku=p.get("sku"),
+                        weight=p.get("weight"),
+                        dimensions=p.get("dimensions"),
+                        material=p.get("material")
+                    )
                     for p in order["products"]
                 ],
                 total_amount=order["total_amount"],
@@ -244,6 +256,32 @@ async def get_orders(
         "limit": limit,
         "offset": skip
     }
+
+
+@router.get("/me", response_model=dict)
+async def get_my_orders(
+    status_filter: Optional[str] = Query(None, alias="status", description="Filter by order status"),
+    skip: int = Query(0, ge=0, alias="skip"),
+    limit: int = Query(50, ge=1, le=100),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Buyer-focused alias for compatibility with /api/orders/me.
+    """
+    if current_user.get("role") != "buyer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only buyers can access this endpoint"
+        )
+
+    return await get_orders(
+        status_filter=status_filter,
+        skip=skip,
+        limit=limit,
+        current_user=current_user,
+        db=db
+    )
 
 
 @router.get("/{order_id}", response_model=OrderResponse)
@@ -291,7 +329,11 @@ async def get_order(
                 price=p["price"],
                 title=p["title"],
                 size=p.get("size"),
-                color=p.get("color")
+                color=p.get("color"),
+                sku=p.get("sku"),
+                weight=p.get("weight"),
+                dimensions=p.get("dimensions"),
+                material=p.get("material")
             )
             for p in order["products"]
         ],
@@ -308,6 +350,28 @@ async def get_order(
         tracking_number=order.get("tracking_number"),
         shipped_at=order.get("shipped_at"),
         delivered_at=order.get("delivered_at")
+    )
+
+
+@router.get("/me/{order_id}", response_model=OrderResponse)
+async def get_my_order(
+    order_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Buyer-focused alias for compatibility with /api/orders/me/{id}.
+    """
+    if current_user.get("role") != "buyer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only buyers can access this endpoint"
+        )
+
+    return await get_order(
+        order_id=order_id,
+        current_user=current_user,
+        db=db
     )
 
 
@@ -398,7 +462,11 @@ async def create_order_from_cart(
                 price=p["price"],
                 title=p["title"],
                 size=p.get("size"),
-                color=p.get("color")
+                color=p.get("color"),
+                sku=p.get("sku"),
+                weight=p.get("weight"),
+                dimensions=p.get("dimensions"),
+                material=p.get("material")
             )
             for p in order_data["products"]
         ],

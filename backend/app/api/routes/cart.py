@@ -44,6 +44,29 @@ async def add_to_cart(
     return await CartService.get_cart_with_details(user_id, db)
 
 
+@router.post("/add", response_model=CartResponse, status_code=status.HTTP_201_CREATED)
+async def add_to_cart_legacy(
+    request: AddToCartRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Legacy alias for adding to cart.
+
+    Kept for frontend compatibility with /api/cart/add.
+    """
+    user_id = str(current_user["_id"])
+
+    await CartService.add_item(
+        user_id=user_id,
+        product_id=request.product_id,
+        quantity=request.quantity,
+        db=db
+    )
+
+    return await CartService.get_cart_with_details(user_id, db)
+
+
 @router.get("", response_model=CartResponse)
 async def get_cart(
     current_user: dict = Depends(get_current_user),
