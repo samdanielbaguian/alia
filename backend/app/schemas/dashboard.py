@@ -35,6 +35,14 @@ class DashboardOverviewResponse(BaseModel):
         ...,
         description="Number of products with low stock (stock <= 5)"
     )
+    total_platform_fees: float = Field(
+        ...,
+        description="Total platform fees collected in XOF"
+    )
+    merchant_net_payout: float = Field(
+        ...,
+        description="Net payout amount for the merchant in XOF"
+    )
     period: DashboardPeriod = Field(..., description="Period for the dashboard data")
     
     class Config:
@@ -50,6 +58,8 @@ class DashboardOverviewResponse(BaseModel):
                 "new_customers": 23,
                 "products_in_stock": 78,
                 "low_stock": 5,
+                "total_platform_fees": 120000.0,
+                "merchant_net_payout": 4470000.0,
                 "period": {
                     "from": "2026-01-01",
                     "to": "2026-01-31"

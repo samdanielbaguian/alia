@@ -9,6 +9,7 @@ class ProductCreate(BaseModel):
     title: str
     description: str
     price: float = Field(gt=0)
+    original_price: Optional[float] = None
     images: List[str] = []
     stock: int = Field(ge=0)
     category: str
@@ -73,6 +74,10 @@ class ProductResponse(BaseModel):
     stock: int
     category: str
     merchant_id: str
+    merchant_shop_name: Optional[str] = None
+    merchant_rating: Optional[float] = None
+    merchant_location: Optional[Location] = None
+    merchant_logo: Optional[str] = None
     is_imported: bool
     source_platform: Optional[str] = None
     source_product_id: Optional[str] = None
@@ -91,3 +96,11 @@ class ProductResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+class ProductResponseEnriched(ProductResponse):
+    """Schema for product response with merchant info."""
+    merchant_shop_name: Optional[str] = None
+    merchant_owner_name: Optional[str] = None
+    merchant_rating: Optional[float] = None
+    merchant_location: Optional[Location] = None

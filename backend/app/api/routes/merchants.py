@@ -62,6 +62,7 @@ async def list_merchants(
                 "user_id": merchant["user_id"],
                 "shop_name": merchant["shop_name"],
                 "description": merchant.get("description", ""),
+                "logo": merchant.get("logo"),
                 "location": merchant.get("location"),
                 "rating": merchant.get("rating", 50.0),
                 "total_sales": merchant.get("total_sales", 0.0),
@@ -80,24 +81,94 @@ async def get_my_merchant_profile(
     current_user: dict = Depends(get_current_merchant),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
-    """Get the authenticated merchant profile."""
+    """Get the authenticated merchant profile with all details including owner info and product count."""
     user_id = str(current_user["_id"])
-    merchant = await db.merchants.find_one({"user_id": user_id})
-
-    if not merchant:
+    
+    # Use aggregation to join with users and count products
+    pipeline = [
+        {"$match": {"user_id": user_id}},
+        {
+            "$lookup": {
+                "from": "users",
+                "localField": "user_id",
+                "foreignField": "_id",
+                "as": "user"
+            }
+        },
+        {"$unwind": {"path": "$user", "preserveNullAndEmptyArrays": True}},
+        {
+            "$lookup": {
+                "from": "products",
+                "localField": "_id",
+                "foreignField": "merchant_id",
+                "as": "products"
+            }
+        },
+        {
+            "$addFields": {
+                "products_count": {"$size": "$products"},
+                "owner_name": {
+                    "$concat": [
+                        {"$ifNull": ["$user.first_name", ""]},
+                        " ",
+                        {"$ifNull": ["$user.last_name", ""]}
+                    ]
+                },
+                "email": "$user.email",
+                "phone": "$user.phone"
+            }
+        },
+        {
+            "$project": {
+                "_id": 1,
+                "user_id": 1,
+                "shop_name": 1,
+                "description": 1,
+                "logo": 1,
+                "location": 1,
+                "phone": 1,
+                "address": 1,
+                "city": 1,
+                "country": 1,
+                "total_sales": 1,
+                "rating": 1,
+                "verified": 1,
+                "is_active": 1,
+                "products_count": 1,
+                "owner_name": 1,
+                "email": 1,
+                "created_at": 1
+            }
+        }
+    ]
+    
+    result = await db.merchants.aggregate(pipeline).to_list(length=1)
+    
+    if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Merchant profile not found"
         )
-
+    
+    merchant = result[0]
     return {
         "id": str(merchant["_id"]),
         "user_id": merchant["user_id"],
         "shop_name": merchant["shop_name"],
         "description": merchant.get("description", ""),
+        "logo": merchant.get("logo"),
         "location": merchant.get("location"),
+        "phone": merchant.get("phone"),
+        "address": merchant.get("address"),
+        "city": merchant.get("city"),
+        "country": merchant.get("country"),
         "total_sales": merchant.get("total_sales", 0.0),
         "rating": merchant.get("rating", 50.0),
+        "verified": merchant.get("verified", False),
+        "is_active": merchant.get("is_active", True),
+        "products_count": merchant.get("products_count", 0),
+        "owner_name": merchant.get("owner_name", "").strip(),
+        "email": merchant.get("email"),
         "created_at": merchant["created_at"]
     }
 
@@ -155,8 +226,20 @@ async def get_merchant(
     merchant_id: str,
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
-    """Get merchant profile by ID."""
-    merchant = await db.merchants.find_one({"user_id": merchant_id})
+    """Get merchant profile by ID. Accepts both ObjectId (_id) and user_id."""
+    merchant = None
+    
+    # Try first by ObjectId (_id)
+    try:
+        merchant_obj_id = ObjectId(merchant_id)
+        merchant = await db.merchants.find_one({"_id": merchant_obj_id})
+    except InvalidId:
+        # If not a valid ObjectId, try by user_id
+        merchant = await db.merchants.find_one({"user_id": merchant_id})
+    
+    # If still not found, try as user_id (in case it was passed as regular string)
+    if not merchant:
+        merchant = await db.merchants.find_one({"user_id": merchant_id})
     
     if not merchant:
         raise HTTPException(
@@ -169,9 +252,16 @@ async def get_merchant(
         "user_id": merchant["user_id"],
         "shop_name": merchant["shop_name"],
         "description": merchant.get("description", ""),
+        "logo": merchant.get("logo"),
         "location": merchant.get("location"),
+        "phone": merchant.get("phone", ""),
+        "address": merchant.get("address", ""),
+        "city": merchant.get("city", ""),
+        "country": merchant.get("country", ""),
         "total_sales": merchant.get("total_sales", 0.0),
-        "rating": merchant.get("rating", 50.0),
+        "rating": merchant.get("rating", 4.5),
+        "verified": merchant.get("verified", False),
+        "is_active": merchant.get("is_active", True),
         "created_at": merchant["created_at"]
     }
 
@@ -226,6 +316,7 @@ async def get_merchant_by_slug(
         "user_id": merchant["user_id"],
         "shop_name": merchant["shop_name"],
         "description": merchant.get("description", ""),
+        "logo": merchant.get("logo"),
         "location": merchant.get("location"),
         "total_sales": merchant.get("total_sales", 0.0),
         "rating": merchant.get("rating", 50.0),
@@ -266,7 +357,7 @@ async def update_merchant(
         )
     
     # Only allow updating certain fields
-    allowed_fields = ["shop_name", "description", "location"]
+    allowed_fields = ["shop_name", "description", "location", "logo", "phone", "address", "city", "country"]
     update_fields = {k: v for k, v in update_data.items() if k in allowed_fields}
     
     if not update_fields:
@@ -287,9 +378,16 @@ async def update_merchant(
         "user_id": updated_merchant["user_id"],
         "shop_name": updated_merchant["shop_name"],
         "description": updated_merchant.get("description", ""),
+        "logo": updated_merchant.get("logo"),
         "location": updated_merchant.get("location"),
+        "phone": updated_merchant.get("phone", ""),
+        "address": updated_merchant.get("address", ""),
+        "city": updated_merchant.get("city", ""),
+        "country": updated_merchant.get("country", ""),
         "total_sales": updated_merchant.get("total_sales", 0.0),
         "rating": updated_merchant.get("rating", 50.0),
+        "verified": updated_merchant.get("verified", False),
+        "is_active": updated_merchant.get("is_active", True),
         "created_at": updated_merchant["created_at"]
     }
 
@@ -342,6 +440,15 @@ async def get_merchant_dashboard(
     
     # Calculate total revenue
     revenue = sum(order["total_amount"] for order in orders)
+
+    # Calculate fees and merchant net payout from payments collection
+    fees_pipeline = [
+        {"$match": {"merchant_id": merchant_id, "status": "completed", "initiated_at": {"$gte": datetime.min, "$lte": datetime.max}}},
+        {"$group": {"_id": None, "total_platform_fees": {"$sum": {"$ifNull": ["$platform_fee", 0]}}, "total_merchant_payout": {"$sum": {"$ifNull": ["$merchant_payout", 0]}}}}
+    ]
+    fees_res = await db.payments.aggregate(fees_pipeline).to_list(length=1)
+    total_fees = fees_res[0].get("total_platform_fees") if fees_res else 0.0
+    merchant_net = fees_res[0].get("total_merchant_payout") if fees_res else 0.0
     
     # Get top selling products
     product_sales = {}
@@ -401,6 +508,8 @@ async def get_merchant_dashboard(
         "products_count": products_count,
         "orders_count": orders_count,
         "revenue": revenue,
+        "total_platform_fees": total_fees,
+        "merchant_net_payout": merchant_net,
         "top_products": top_products,
         "orders_by_status": orders_by_status,
         "recent_orders": recent_orders_list,
@@ -682,7 +791,7 @@ async def get_dashboard_overview(
         "unique_customers": []
     }
     
-    # Calculate total sales from completed payments (status: completed)
+    # Calculate total sales, platform fees, and merchant payout from completed payments
     payments_pipeline = [
         {
             "$match": {
@@ -694,13 +803,22 @@ async def get_dashboard_overview(
         {
             "$group": {
                 "_id": None,
-                "total_sales": {"$sum": "$amount"}
+                "total_sales": {"$sum": {"$ifNull": ["$amount", 0]}},
+                "total_platform_fees": {"$sum": {"$ifNull": ["$platform_fee", 0]}},
+                "total_merchant_payout": {"$sum": {"$ifNull": ["$merchant_payout", 0]}}
             }
         }
     ]
     
     payments_result = await db.payments.aggregate(payments_pipeline).to_list(length=1)
-    total_sales = payments_result[0]["total_sales"] if payments_result else 0.0
+    payments_summary = payments_result[0] if payments_result else {
+        "total_sales": 0.0,
+        "total_platform_fees": 0.0,
+        "total_merchant_payout": 0.0
+    }
+    total_sales = payments_summary["total_sales"]
+    total_platform_fees = payments_summary["total_platform_fees"]
+    merchant_net_payout = payments_summary["total_merchant_payout"]
     
     # Get refunds information
     refunds_pipeline = [
@@ -782,6 +900,8 @@ async def get_dashboard_overview(
         new_customers=new_customers_count,
         products_in_stock=products_stats["products_in_stock"],
         low_stock=products_stats["low_stock"],
+        total_platform_fees=total_platform_fees,
+        merchant_net_payout=merchant_net_payout,
         period=DashboardPeriod(**{"from": from_date, "to": to_date})
     )
 

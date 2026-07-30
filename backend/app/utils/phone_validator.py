@@ -63,6 +63,42 @@ def validate_ivorian_phone(phone_number: str) -> Tuple[bool, Optional[str], Opti
     return True, '+' + cleaned, None
 
 
+def validate_e164(phone_number: str) -> Tuple[bool, Optional[str], Optional[str]]:
+    """
+    Generic E.164 phone number validator.
+
+    Returns (is_valid, cleaned_number_in_e164, error_message)
+    """
+    if not phone_number or not isinstance(phone_number, str):
+        return False, None, "Phone number must be a string"
+
+    # Remove spaces, hyphens, parentheses
+    cleaned = re.sub(r'[\s\-\(\)]', '', phone_number)
+
+    # Convert 00 prefix to +
+    if cleaned.startswith('00'):
+        cleaned = '+' + cleaned[2:]
+
+    if not cleaned.startswith('+'):
+        # If it starts with country code without + (e.g., 225...), add +
+        if cleaned.isdigit():
+            cleaned = '+' + cleaned
+        else:
+            return False, None, "Phone number must be in international (E.164) format"
+
+    # E.164: + followed by 1 to 15 digits, country code cannot start with 0
+    if not re.fullmatch(r"\+[1-9]\d{1,14}", cleaned):
+        return False, None, "Invalid E.164 phone number"
+
+    return True, cleaned, None
+
+
+def validate_phone_ivoire(phone: str) -> bool:
+    """Return True if phone is a valid Ivorian number (+225XXXXXXXXXX variants)."""
+    is_valid, cleaned, err = validate_ivorian_phone(phone)
+    return is_valid
+
+
 def detect_provider(phone_number: str) -> Optional[str]:
     """
     Detect mobile money provider from Ivorian phone number.

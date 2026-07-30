@@ -42,7 +42,9 @@ class TestDashboardOverview:
         # Mock payments aggregation result
         mock_payments_cursor = MagicMock()
         mock_payments_cursor.to_list = AsyncMock(return_value=[{
-            "total_sales": 4590000.0
+            "total_sales": 4590000.0,
+            "total_platform_fees": 120000.0,
+            "total_merchant_payout": 4470000.0
         }])
         mock_db.payments.aggregate = MagicMock(return_value=mock_payments_cursor)
         
@@ -92,6 +94,8 @@ class TestDashboardOverview:
         # Assertions
         assert isinstance(result, DashboardOverviewResponse)
         assert result.total_sales == 4590000.0
+        assert result.total_platform_fees == 120000.0
+        assert result.merchant_net_payout == 4470000.0
         assert result.orders_count == 133
         assert result.orders_pending == 11
         assert result.orders_shipped == 72

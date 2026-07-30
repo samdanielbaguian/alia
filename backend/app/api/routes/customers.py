@@ -23,6 +23,12 @@ async def get_customer_profile(
     return {
         "id": str(current_user["_id"]),
         "email": current_user["email"],
+        "first_name": current_user.get("first_name"),
+        "last_name": current_user.get("last_name"),
+        "phone": current_user.get("phone"),
+        "address": current_user.get("address"),
+        "city": current_user.get("city"),
+        "country": current_user.get("country"),
         "role": current_user["role"],
         "age": current_user.get("age"),
         "preferences": current_user.get("preferences", []),

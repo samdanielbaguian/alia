@@ -14,8 +14,9 @@ from bson import ObjectId
 
 from app.models.payment import Payment, PaymentStatus, PaymentProvider
 from app.models.refund import Refund as RefundModel, RefundStatus
-from app.utils.phone_validator import validate_ivorian_phone, detect_provider, get_ussd_code
+from app.utils.phone_validator import validate_e164, validate_ivorian_phone, detect_provider, get_ussd_code
 from app.config.payment_config import PAYMENT_CONFIG, PAYMENT_MODE, calculate_fees
+from app.models.settings import SettingsModel
 
 # Import payment providers
 from app.services.payment_providers.simulation_service import SimulationService
@@ -47,6 +48,11 @@ class PaymentService:
         """
         Initiate a mobile money payment.
         
+        Validates:
+        - Phone number format and provider
+        - Payment amount matches order total
+        - No duplicate pending payment
+        
         Args:
             order_id: Order identifier
             phone_number: Customer's mobile money number
@@ -60,23 +66,53 @@ class PaymentService:
         """
         logger.info(f"Initiating payment for order {order_id}, amount {amount} XOF")
         
-        # Validate phone number
-        is_valid, cleaned_phone, error = validate_ivorian_phone(phone_number)
+        # ✅ VALIDATION: Amount must be positive
+        if amount <= 0:
+            return {
+                "success": False,
+                "message": "Payment amount must be greater than 0"
+            }
+        
+        # Validate phone number (accept international E.164)
+        is_valid, cleaned_phone, error = validate_e164(phone_number)
         if not is_valid:
             return {
                 "success": False,
                 "message": f"Invalid phone number: {error}"
             }
+
+        # Detect provider only for Ivorian numbers (+225). For other countries,
+        # allow initiation in SIMULATION mode. In production/sandbox we require a supported provider.
+        provider = None
+        if cleaned_phone.startswith('+225'):
+            provider = detect_provider(cleaned_phone)
+            if not provider:
+                return {
+                    "success": False,
+                    "message": "Could not determine payment provider from Ivorian phone number"
+                }
+            logger.info(f"Detected provider: {provider}")
+        else:
+            if PAYMENT_MODE == 'SIMULATION':
+                provider = 'simulation'
+                logger.info(f"Non-Ivorian number detected, using simulation provider: {cleaned_phone}")
+            else:
+                return {
+                    "success": False,
+                    "message": "Unsupported provider: only Ivorian mobile money is supported in this environment"
+                }
         
-        # Detect provider from phone number
-        provider = detect_provider(cleaned_phone)
-        if not provider:
-            return {
-                "success": False,
-                "message": "Could not determine payment provider from phone number"
-            }
-        
-        logger.info(f"Detected provider: {provider}")
+        # ✅ VALIDATION: Check amount matches order total (with small tolerance for rounding)
+        order = await db.orders.find_one({"_id": ObjectId(order_id)})
+        if order:
+            order_total = order.get("total_amount", 0)
+            tolerance = 0.01  # Allow 1 centime difference for rounding
+            if abs(amount - order_total) > tolerance:
+                logger.warning(f"Payment amount mismatch: {amount} vs order total {order_total}")
+                return {
+                    "success": False,
+                    "message": f"Payment amount ({amount}) does not match order total ({order_total})"
+                }
         
         # Check for existing pending payment for this order
         existing_payment = await db.payments.find_one({
@@ -85,16 +121,43 @@ class PaymentService:
         })
         
         if existing_payment:
-            # Check if it's expired
-            if existing_payment:
-                return {
-                    "success": False,
-                    "message": "A pending payment already exists for this order",
-                    "payment_id": existing_payment.get("payment_id")
-                }
+            return {
+                "success": False,
+                "message": "A pending payment already exists for this order",
+                "payment_id": existing_payment.get("payment_id")
+            }
         
         # Calculate fees
-        fee_breakdown = calculate_fees(amount, provider)
+        # Try to read platform fee percentage from DB settings (single doc), fallback to env config
+        try:
+            settings_doc = await db.settings.find_one({})
+            if settings_doc and settings_doc.get("platform_fee_percentage") is not None:
+                fee_percent = float(settings_doc.get("platform_fee_percentage"))
+            else:
+                fee_percent = PAYMENT_CONFIG["fees"]["platform_commission_percent"]
+        except Exception:
+            fee_percent = PAYMENT_CONFIG["fees"]["platform_commission_percent"]
+
+        # calculate_fees currently reads from PAYMENT_CONFIG; allow overriding by passing fee_percent
+        # We'll compute gateway fee and platform fee here using same logic as calculate_fees
+        fees_cfg = PAYMENT_CONFIG["fees"]
+        provider_to_config_key = {
+            "orange_money": "orange_gateway_fee_percent",
+            "mtn_money": "mtn_gateway_fee_percent",
+            "moov_money": "moov_gateway_fee_percent"
+        }
+
+        gateway_fee_percent = fees_cfg.get(provider_to_config_key.get(provider, ""), 0)
+        platform_fee = round(amount * (fee_percent / 100), 2)
+        gateway_fee = round(amount * (gateway_fee_percent / 100), 2)
+        merchant_payout = round(amount - platform_fee - gateway_fee, 2)
+
+        fee_breakdown = {
+            "gross_amount": amount,
+            "platform_fee": platform_fee,
+            "payment_gateway_fee": gateway_fee,
+            "merchant_payout": merchant_payout
+        }
         
         # Create payment record
         payment = Payment(
@@ -177,7 +240,10 @@ class PaymentService:
             "transaction_id": transaction_id,
             "message": provider_response.get("message", f"Veuillez composer {ussd_code} pour confirmer le paiement de {amount:.0f} FCFA"),
             "ussd_code": ussd_code,
-            "expires_at": payment.expires_at.isoformat()
+            "expires_at": payment.expires_at.isoformat(),
+            "platform_fee": fee_breakdown.get("platform_fee"),
+            "payment_gateway_fee": fee_breakdown.get("payment_gateway_fee"),
+            "merchant_payout": fee_breakdown.get("merchant_payout")
         }
     
     async def _call_provider(

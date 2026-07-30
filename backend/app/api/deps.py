@@ -74,6 +74,24 @@ async def get_current_merchant(
     return current_user
 
 
+async def get_current_admin(
+    current_user: dict = Depends(get_current_user)
+) -> dict:
+    """
+    Dependency to ensure the current user is an admin.
+    
+    Raises:
+        HTTPException: If user is not an admin
+    """
+    if current_user.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can access this endpoint"
+        )
+    
+    return current_user
+
+
 async def get_optional_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: AsyncIOMotorDatabase = Depends(get_db)

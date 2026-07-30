@@ -31,8 +31,14 @@ class UserResponse(BaseModel):
     """Schema for user response."""
     id: str
     email: EmailStr
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     role: str
     age: Optional[int] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    country: Optional[str] = None
     preferences: List[str] = []
     good_rate: float
     location: Optional[Location] = None
@@ -44,8 +50,14 @@ class UserResponse(BaseModel):
             "example": {
                 "id": "user123",
                 "email": "user@example.com",
+                "first_name": "Jean",
+                "last_name": "Dupont",
                 "role": "buyer",
                 "age": 25,
+                "phone": "+221771234567",
+                "address": "123 Rue de la Paix",
+                "city": "Dakar",
+                "country": "Senegal",
                 "preferences": ["electronics", "fashion"],
                 "good_rate": 85.5,
                 "location": {"lat": 14.6937, "lng": -17.4441},

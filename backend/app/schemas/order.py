@@ -35,6 +35,19 @@ class OrderProductResponse(BaseModel):
     color: Optional[str] = None
 
 
+class CustomerInfoResponse(BaseModel):
+    """Customer data attached to an order response."""
+    id: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    country: Optional[str] = None
+
+
 class StatusHistoryResponse(BaseModel):
     """Schema for status history entry."""
     status: str
@@ -56,12 +69,18 @@ class OrderResponse(BaseModel):
     updated_at: datetime
     
     # New fields
+    customer: Optional[CustomerInfoResponse] = None
+    shipping_address: Optional[str] = None
     status_history: Optional[List[StatusHistoryResponse]] = None
     cancelled_by: Optional[str] = None
     cancellation_reason: Optional[str] = None
     tracking_number: Optional[str] = None
     shipped_at: Optional[datetime] = None
     delivered_at: Optional[datetime] = None
+    # Fee breakdown (optional)
+    platform_fee: Optional[float] = None
+    payment_gateway_fee: Optional[float] = None
+    merchant_payout: Optional[float] = None
     
     class Config:
         from_attributes = True

@@ -6,8 +6,13 @@ import logging
 
 from app.core.config import settings
 from app.core.database import connect_to_mongo, close_mongo_connection
-from app.api.routes import auth, products, merchants, orders, aliexpress, buybox, cart, payments, uploads, customers
-from app.api.routes import admin_orders, admin_users, admin_products, admin_merchants
+from app.api.routes import (
+    auth, products, merchants, orders, aliexpress, buybox, cart, 
+    payments, uploads, customers, admin_orders, admin_users, 
+    admin_products, admin_merchants
+)
+from app.api.routes import reviews
+from app.api.routes import admin_stats
 
 # Configure logging
 logging.basicConfig(
@@ -26,7 +31,7 @@ app = FastAPI(
 )
 
 # Mount uploads static directory
-uploads_dir = Path(__file__).resolve().parents[2] / 'uploads'
+uploads_dir = Path(__file__).resolve().parent / 'uploads'
 uploads_dir.mkdir(parents=True, exist_ok=True)
 app.mount('/uploads', StaticFiles(directory=str(uploads_dir)), name='uploads')
 
@@ -81,6 +86,9 @@ async def root():
     }
 
 
+app.include_router(admin_stats.router, prefix=f"{settings.API_V1_PREFIX}/admin", tags=["Admin - Stats"])
+app.include_router(reviews.router, prefix=f"{settings.API_V1_PREFIX}/reviews", tags=["Reviews"])
+
 # Include routers
 app.include_router(auth.router, prefix=f"{settings.API_V1_PREFIX}/auth", tags=["Authentication"])
 app.include_router(products.router, prefix=f"{settings.API_V1_PREFIX}/products", tags=["Products"])
@@ -93,11 +101,15 @@ app.include_router(buybox.router, prefix=f"{settings.API_V1_PREFIX}/buybox", tag
 app.include_router(cart.router, prefix=f"{settings.API_V1_PREFIX}/cart", tags=["Cart"])
 app.include_router(uploads.router, prefix=f"{settings.API_V1_PREFIX}/uploads", tags=["Uploads"])
 
-# Admin routes
+# Admin routes (protected by get_current_admin)
 app.include_router(admin_orders.router, prefix=f"{settings.API_V1_PREFIX}/admin/orders", tags=["Admin - Orders"])
 app.include_router(admin_users.router, prefix=f"{settings.API_V1_PREFIX}/admin/users", tags=["Admin - Users"])
 app.include_router(admin_products.router, prefix=f"{settings.API_V1_PREFIX}/admin/products", tags=["Admin - Products"])
 app.include_router(admin_merchants.router, prefix=f"{settings.API_V1_PREFIX}/admin/merchants", tags=["Admin - Merchants"])
+app.include_router(__import__('app.api.routes.settings', fromlist=['settings']).router, prefix=f"{settings.API_V1_PREFIX}/settings", tags=["Settings"]) 
+# app.include_router(admin_users.router, prefix=f"{settings.API_V1_PREFIX}/admin/users", tags=["Admin - Users"])
+# app.include_router(admin_products.router, prefix=f"{settings.API_V1_PREFIX}/admin/products", tags=["Admin - Products"])
+# app.include_router(admin_merchants.router, prefix=f"{settings.API_V1_PREFIX}/admin/merchants", tags=["Admin - Merchants"])
 
 
 if __name__ == "__main__":

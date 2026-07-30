@@ -6,17 +6,129 @@ from datetime import datetime
 
 from app.api.deps import get_db, get_current_user
 from app.schemas.order import (
-    OrderCreate, OrderResponse, OrderProductResponse,
+    OrderCreate, OrderResponse, OrderProductResponse, CustomerInfoResponse,
     StatusUpdateRequest, ShipOrderRequest, CancelOrderRequest,
     ConfirmOrderRequest, DeliverOrderRequest, OrderHistoryResponse,
     StatusHistoryResponse
 )
 from app.schemas.cart import OrderFromCartRequest
 from app.services.payment_service import process_payment
+from app.config.payment_config import PAYMENT_CONFIG
+import secrets
 from app.services.cart_service import CartService
 from app.services.order_service import OrderService
 
 router = APIRouter()
+
+
+async def _build_customer_info(db: AsyncIOMotorDatabase, user_id: str) -> CustomerInfoResponse:
+    """Load customer profile details from the users collection for an order."""
+    if not user_id:
+        return CustomerInfoResponse()
+
+    try:
+        user_obj_id = ObjectId(user_id)
+    except Exception:
+        user_obj_id = user_id
+
+    user = await db.users.find_one({"_id": user_obj_id})
+    if not user:
+        return CustomerInfoResponse()
+
+    first_name = user.get("first_name") or user.get("firstname")
+    last_name = user.get("last_name") or user.get("lastname")
+    full_name = user.get("full_name") or user.get("name")
+    if not full_name:
+        full_name = " ".join([part for part in [first_name, last_name] if part]).strip() or None
+
+    return CustomerInfoResponse(
+        id=str(user.get("_id")),
+        first_name=first_name,
+        last_name=last_name,
+        full_name=full_name,
+        email=user.get("email"),
+        phone=user.get("phone"),
+        address=user.get("address"),
+        city=user.get("city"),
+        country=user.get("country")
+    )
+
+
+async def _get_platform_fee_percent(db: AsyncIOMotorDatabase) -> float:
+    """Read the platform fee percentage from settings or fallback to config."""
+    try:
+        settings_doc = await db.settings.find_one({})
+        if settings_doc and settings_doc.get("platform_fee_percentage") is not None:
+            return float(settings_doc.get("platform_fee_percentage"))
+    except Exception:
+        pass
+    return PAYMENT_CONFIG["fees"]["platform_commission_percent"]
+
+
+def _calculate_order_fees(amount: float, fee_percent: float, gateway_fee_percent: float = 0.0) -> tuple[float, float, float]:
+    platform_fee = round(amount * (fee_percent / 100), 2)
+    payment_gateway_fee = round(amount * (gateway_fee_percent / 100), 2)
+    merchant_payout = round(amount - platform_fee - payment_gateway_fee, 2)
+    return platform_fee, payment_gateway_fee, merchant_payout
+
+
+async def _serialize_order(db: AsyncIOMotorDatabase, order: dict) -> OrderResponse:
+    """Serialize an order document and enrich it with customer details."""
+    customer = await _build_customer_info(db, order.get("user_id"))
+    shipping_address = order.get("shipping_address") or order.get("delivery_address") or None
+    if isinstance(shipping_address, dict):
+        parts = [shipping_address.get("address") or shipping_address.get("street"), shipping_address.get("city"), shipping_address.get("country")]
+        shipping_address = ", ".join([p for p in parts if p]) or None
+    # Try to find related payment to include fee breakdown
+    payment = await db.payments.find_one({"order_id": str(order.get("_id"))}, sort=[("created_at", -1)])
+
+    platform_fee = None
+    payment_gateway_fee = None
+    merchant_payout = None
+    if payment:
+        platform_fee = payment.get("platform_fee")
+        payment_gateway_fee = payment.get("payment_gateway_fee")
+        merchant_payout = payment.get("merchant_payout")
+
+    return OrderResponse(
+        id=str(order["_id"]),
+        user_id=order["user_id"],
+        merchant_id=order["merchant_id"],
+        products=[
+            OrderProductResponse(
+                product_id=p["product_id"],
+                quantity=p["quantity"],
+                price=p["price"],
+                title=p["title"],
+                size=p.get("size"),
+                color=p.get("color"),
+                sku=p.get("sku"),
+                weight=p.get("weight"),
+                dimensions=p.get("dimensions"),
+                material=p.get("material")
+            )
+            for p in order["products"]
+        ],
+        total_amount=order["total_amount"],
+        status=order["status"],
+        payment_method=order["payment_method"],
+        created_at=order["created_at"],
+        updated_at=order.get("updated_at", order["created_at"]),
+        customer=customer,
+        shipping_address=shipping_address,
+        status_history=[
+            StatusHistoryResponse(**h) for h in order.get("status_history", [])
+        ] if order.get("status_history") else None,
+        cancelled_by=order.get("cancelled_by"),
+        cancellation_reason=order.get("cancellation_reason"),
+        tracking_number=order.get("tracking_number"),
+        shipped_at=order.get("shipped_at"),
+        delivered_at=order.get("delivered_at"),
+        platform_fee=platform_fee,
+        payment_gateway_fee=payment_gateway_fee,
+        merchant_payout=merchant_payout
+    )
+
 
 
 @router.post("", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
@@ -104,6 +216,13 @@ async def create_order(
         )
     
     # Create order
+    fee_percent = await _get_platform_fee_percent(db)
+    platform_fee, payment_gateway_fee, merchant_payout = _calculate_order_fees(
+        total_amount,
+        fee_percent,
+        0.0
+    )
+
     order_data = {
         "user_id": user_id,
         "merchant_id": merchant_id,
@@ -120,52 +239,50 @@ async def create_order(
                 "changed_by": "system",
                 "note": "Order created"
             }
-        ]
+        ],
+        "platform_fee": platform_fee,
+        "payment_gateway_fee": payment_gateway_fee,
+        "merchant_payout": merchant_payout
     }
-    
+
     result = await db.orders.insert_one(order_data)
     order_data["_id"] = result.inserted_id
-    
+
     # Update product stock
     for item in order.products:
         await db.products.update_one(
             {"_id": ObjectId(item.product_id)},
             {"$inc": {"stock": -item.quantity}}
         )
-    
+
     # Update merchant total_sales
     await db.merchants.update_one(
         {"user_id": merchant_id},
         {"$inc": {"total_sales": total_amount}}
     )
-    
+
+    payment_doc = {
+        "payment_id": f"pay_{secrets.token_hex(8)}",
+        "order_id": str(order_data["_id"]),
+        "user_id": user_id,
+        "merchant_id": merchant_id,
+        "amount": total_amount,
+        "currency": "XOF",
+        "provider": "legacy",
+        "status": "pending",
+        "gross_amount": total_amount,
+        "platform_fee": platform_fee,
+        "payment_gateway_fee": payment_gateway_fee,
+        "merchant_payout": merchant_payout,
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow()
+    }
+
+    await db.payments.insert_one(payment_doc)
+
     # TODO: For imported products, send order to AliExpress
-    
-    return OrderResponse(
-        id=str(order_data["_id"]),
-        user_id=order_data["user_id"],
-        merchant_id=order_data["merchant_id"],
-        products=[
-            OrderProductResponse(
-                product_id=p["product_id"],
-                quantity=p["quantity"],
-                price=p["price"],
-                title=p["title"],
-                size=p.get("size"),
-                color=p.get("color"),
-                sku=p.get("sku"),
-                weight=p.get("weight"),
-                dimensions=p.get("dimensions"),
-                material=p.get("material")
-            )
-            for p in order_data["products"]
-        ],
-        total_amount=order_data["total_amount"],
-        status=order_data["status"],
-        payment_method=order_data["payment_method"],
-        created_at=order_data["created_at"],
-        updated_at=order_data["updated_at"]
-    )
+
+    return await _serialize_order(db, order_data)
 
 
 @router.get("", response_model=dict)
@@ -217,39 +334,7 @@ async def get_orders(
     
     return {
         "orders": [
-            OrderResponse(
-                id=str(order["_id"]),
-                user_id=order["user_id"],
-                merchant_id=order["merchant_id"],
-                products=[
-                    OrderProductResponse(
-                        product_id=p["product_id"],
-                        quantity=p["quantity"],
-                        price=p["price"],
-                        title=p["title"],
-                        size=p.get("size"),
-                        color=p.get("color"),
-                        sku=p.get("sku"),
-                        weight=p.get("weight"),
-                        dimensions=p.get("dimensions"),
-                        material=p.get("material")
-                    )
-                    for p in order["products"]
-                ],
-                total_amount=order["total_amount"],
-                status=order["status"],
-                payment_method=order["payment_method"],
-                created_at=order["created_at"],
-                updated_at=order.get("updated_at", order["created_at"]),
-                status_history=[
-                    StatusHistoryResponse(**h) for h in order.get("status_history", [])
-                ] if order.get("status_history") else None,
-                cancelled_by=order.get("cancelled_by"),
-                cancellation_reason=order.get("cancellation_reason"),
-                tracking_number=order.get("tracking_number"),
-                shipped_at=order.get("shipped_at"),
-                delivered_at=order.get("delivered_at")
-            )
+            await _serialize_order(db, order)
             for order in orders
         ],
         "total": total,
@@ -318,39 +403,7 @@ async def get_order(
             detail="You don't have permission to view this order"
         )
     
-    return OrderResponse(
-        id=str(order["_id"]),
-        user_id=order["user_id"],
-        merchant_id=order["merchant_id"],
-        products=[
-            OrderProductResponse(
-                product_id=p["product_id"],
-                quantity=p["quantity"],
-                price=p["price"],
-                title=p["title"],
-                size=p.get("size"),
-                color=p.get("color"),
-                sku=p.get("sku"),
-                weight=p.get("weight"),
-                dimensions=p.get("dimensions"),
-                material=p.get("material")
-            )
-            for p in order["products"]
-        ],
-        total_amount=order["total_amount"],
-        status=order["status"],
-        payment_method=order["payment_method"],
-        created_at=order["created_at"],
-        updated_at=order.get("updated_at", order["created_at"]),
-        status_history=[
-            StatusHistoryResponse(**h) for h in order.get("status_history", [])
-        ] if order.get("status_history") else None,
-        cancelled_by=order.get("cancelled_by"),
-        cancellation_reason=order.get("cancellation_reason"),
-        tracking_number=order.get("tracking_number"),
-        shipped_at=order.get("shipped_at"),
-        delivered_at=order.get("delivered_at")
-    )
+    return await _serialize_order(db, order)
 
 
 @router.get("/me/{order_id}", response_model=OrderResponse)
@@ -447,35 +500,42 @@ async def create_order_from_cart(
         {"user_id": merchant_id},
         {"$inc": {"total_sales": total_amount}}
     )
+
+    # Persist fee breakdown for the created order
+    fee_percent = await _get_platform_fee_percent(db)
+    platform_fee, payment_gateway_fee, merchant_payout = _calculate_order_fees(
+        total_amount,
+        fee_percent,
+        0.0
+    )
+
+    order_data["platform_fee"] = platform_fee
+    order_data["payment_gateway_fee"] = payment_gateway_fee
+    order_data["merchant_payout"] = merchant_payout
+
+    payment_doc = {
+        "payment_id": f"pay_{secrets.token_hex(8)}",
+        "order_id": str(order_data["_id"]),
+        "user_id": user_id,
+        "merchant_id": merchant_id,
+        "amount": total_amount,
+        "currency": "XOF",
+        "provider": "legacy",
+        "status": "pending",
+        "gross_amount": total_amount,
+        "platform_fee": platform_fee,
+        "payment_gateway_fee": payment_gateway_fee,
+        "merchant_payout": merchant_payout,
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow()
+    }
+
+    await db.payments.insert_one(payment_doc)
     
     # Clear cart
     await CartService.clear_cart(user_id, db)
     
-    return OrderResponse(
-        id=str(order_data["_id"]),
-        user_id=order_data["user_id"],
-        merchant_id=order_data["merchant_id"],
-        products=[
-            OrderProductResponse(
-                product_id=p["product_id"],
-                quantity=p["quantity"],
-                price=p["price"],
-                title=p["title"],
-                size=p.get("size"),
-                color=p.get("color"),
-                sku=p.get("sku"),
-                weight=p.get("weight"),
-                dimensions=p.get("dimensions"),
-                material=p.get("material")
-            )
-            for p in order_data["products"]
-        ],
-        total_amount=order_data["total_amount"],
-        status=order_data["status"],
-        payment_method=order_data["payment_method"],
-        created_at=order_data["created_at"],
-        updated_at=order_data["updated_at"]
-    )
+    return await _serialize_order(db, order_data)
 
 
 # ===== ORDER MANAGEMENT ENDPOINTS =====

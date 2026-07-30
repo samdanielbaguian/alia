@@ -110,7 +110,10 @@ async def initiate_payment(
         transaction_id=result.get("transaction_id"),
         message=result["message"],
         ussd_code=result["ussd_code"],
-        expires_at=result["expires_at"]
+        expires_at=result["expires_at"],
+        platform_fee=result.get("platform_fee"),
+        payment_gateway_fee=result.get("payment_gateway_fee"),
+        merchant_payout=result.get("merchant_payout")
     )
 
 

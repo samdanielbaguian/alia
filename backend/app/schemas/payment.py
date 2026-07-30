@@ -30,6 +30,9 @@ class PaymentInitiateResponse(BaseModel):
     message: str
     ussd_code: str
     expires_at: datetime
+    platform_fee: float | None = None
+    payment_gateway_fee: float | None = None
+    merchant_payout: float | None = None
     
     class Config:
         json_schema_extra = {
@@ -61,6 +64,9 @@ class PaymentStatusResponse(BaseModel):
     completed_at: Optional[datetime] = None
     expires_at: Optional[datetime] = None
     failure_reason: Optional[str] = None
+    platform_fee: Optional[float] = None
+    payment_gateway_fee: Optional[float] = None
+    merchant_payout: Optional[float] = None
     
     class Config:
         json_schema_extra = {

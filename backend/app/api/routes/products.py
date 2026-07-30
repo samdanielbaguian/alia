@@ -1,3 +1,4 @@
+import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import RedirectResponse
@@ -12,12 +13,13 @@ from app.services.share_service import ShareService
 from app.utils.helpers import format_document
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("", response_model=List[ProductResponse])
 async def get_products(
     category: Optional[str] = None,
-    merchant_id: Optional[str] = Query(None, description="Filter by merchant id"),
+    merchant_id: Optional[str] = Query(None, description="Filter by merchant id (ObjectId or user_id)"),
     sort: Optional[str] = Query(
         None,
         description="Sort by: price_asc, price_desc, newest, oldest"
@@ -30,38 +32,143 @@ async def get_products(
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
     """
-    Get list of products with optional filters.
+    Get list of products with optional filters and merchant enrichment.
+    Includes merchant shop name and rating.
     
     Filters:
     - category: Filter by product category
+    - merchant_id: Filter by merchant ID (can be ObjectId or user_id)
     - price_min: Minimum price
     - price_max: Maximum price
     - age_restricted: Filter by age restriction
     """
-    query = {}
+    match_query = {}
     
     if category:
-        query["category"] = category
+        match_query["category"] = category
+    
     if merchant_id:
-        query["merchant_id"] = merchant_id
+        # Accept both ObjectId and string merchant_id representations.
+        if ObjectId.is_valid(merchant_id):
+            match_values = [ObjectId(merchant_id), merchant_id]
+
+            # If the provided merchant ID is actually a merchant _id,
+            # also allow products that store the merchant user_id string.
+            merchant_obj = await db.merchants.find_one({"_id": ObjectId(merchant_id)})
+            if merchant_obj and merchant_obj.get("user_id"):
+                user_id = merchant_obj.get("user_id")
+                if user_id not in match_values:
+                    match_values.append(user_id)
+
+            match_query["merchant_id"] = {"$in": match_values}
+        else:
+            match_query["merchant_id"] = merchant_id
+    
     if price_min is not None:
-        query.setdefault("price", {})["$gte"] = price_min
+        match_query["price"] = match_query.get("price", {})
+        match_query["price"]["$gte"] = price_min
     if price_max is not None:
-        query.setdefault("price", {})["$lte"] = price_max
+        match_query["price"] = match_query.get("price", {})
+        match_query["price"]["$lte"] = price_max
     if age_restricted is not None:
-        query["age_restricted"] = age_restricted
+        match_query["age_restricted"] = age_restricted
 
-    products_cursor = db.products.find(query)
+    # Determine sort
+    sort_field = "created_at"
+    sort_direction = -1
+    
     if sort == "price_asc":
-        products_cursor = products_cursor.sort("price", 1)
+        sort_field = "price"
+        sort_direction = 1
     elif sort == "price_desc":
-        products_cursor = products_cursor.sort("price", -1)
+        sort_field = "price"
+        sort_direction = -1
     elif sort == "newest":
-        products_cursor = products_cursor.sort("created_at", -1)
+        sort_field = "created_at"
+        sort_direction = -1
     elif sort == "oldest":
-        products_cursor = products_cursor.sort("created_at", 1)
+        sort_field = "created_at"
+        sort_direction = 1
 
-    products = await products_cursor.skip(skip).limit(limit).to_list(length=limit)
+    # Build aggregation pipeline
+    pipeline = [
+        {"$match": match_query},
+        {
+            "$lookup": {
+                "from": "merchants",
+                "let": {"merchantId": "$merchant_id"},
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$or": [
+                                    {"$eq": ["$_id", {"$convert": {"input": "$$merchantId", "to": "objectId", "onError": None, "onNull": None}}]},
+                                    {"$eq": ["$user_id", "$$merchantId"]}
+                                ]
+                            }
+                        }
+                    }
+                ],
+                "as": "merchant"
+            }
+        },
+        {
+            "$unwind": {
+                "path": "$merchant",
+                "preserveNullAndEmptyArrays": True
+            }
+        },
+        {
+            "$addFields": {
+                "merchant_shop_name": "$merchant.shop_name",
+                "merchant_rating": "$merchant.rating",
+                "merchant_location": "$merchant.location",
+                "merchant_logo": "$merchant.logo"
+            }
+        },
+        {
+            "$sort": {sort_field: sort_direction}
+        },
+        {
+            "$skip": skip
+        },
+        {
+            "$limit": limit
+        },
+        {
+            "$project": {
+                "_id": 1,
+                "title": 1,
+                "description": 1,
+                "price": 1,
+                "original_price": 1,
+                "images": 1,
+                "stock": 1,
+                "category": 1,
+                "merchant_id": 1,
+                "merchant_shop_name": 1,
+                "merchant_rating": 1,
+                "merchant_location": 1,
+                "merchant_logo": 1,
+                "is_imported": 1,
+                "source_platform": 1,
+                "source_product_id": 1,
+                "delivery_days": 1,
+                "age_restricted": 1,
+                "location": 1,
+                "sku": 1,
+                "size": 1,
+                "color": 1,
+                "weight": 1,
+                "dimensions": 1,
+                "material": 1,
+                "created_at": 1,
+                "updated_at": 1
+            }
+        }
+    ]
+
+    products = await db.products.aggregate(pipeline).to_list(length=limit)
     
     return [
         ProductResponse(
@@ -154,21 +261,62 @@ async def get_product(
     product_id: str,
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
-    """Get a single product by ID."""
+    """Get a single product by ID with merchant enrichment."""
     try:
-        product = await db.products.find_one({"_id": ObjectId(product_id)})
+        oid = ObjectId(product_id)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid product ID"
         )
     
-    if not product:
+    # Aggregation pipeline to enrich with merchant info
+    pipeline = [
+        {"$match": {"_id": oid}},
+        {
+            "$lookup": {
+                "from": "merchants",
+                "let": {"merchantId": "$merchant_id"},
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$or": [
+                                    {"$eq": ["$_id", {"$convert": {"input": "$$merchantId", "to": "objectId", "onError": None, "onNull": None}}]},
+                                    {"$eq": ["$user_id", "$$merchantId"]}
+                                ]
+                            }
+                        }
+                    }
+                ],
+                "as": "merchant"
+            }
+        },
+        {
+            "$unwind": {
+                "path": "$merchant",
+                "preserveNullAndEmptyArrays": True
+            }
+        },
+        {
+            "$addFields": {
+                "merchant_shop_name": "$merchant.shop_name",
+                "merchant_rating": "$merchant.rating",
+                "merchant_location": "$merchant.location",
+                "merchant_logo": "$merchant.logo"
+            }
+        }
+    ]
+    
+    result = await db.products.aggregate(pipeline).to_list(length=1)
+    
+    if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Product not found"
         )
     
+    product = result[0]
     return ProductResponse(
         id=str(product["_id"]),
         title=product["title"],
@@ -213,7 +361,8 @@ async def create_product(
         "title": product.title,
         "description": product.description,
         "price": product.price,
-        "images": product.images,
+        "original_price": product.original_price if product.original_price is not None else None,
+        "images": product.images or [],
         "stock": product.stock,
         "category": product.category,
         "merchant_id": merchant_id,

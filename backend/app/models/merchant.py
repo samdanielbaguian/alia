@@ -10,9 +10,16 @@ class Merchant(BaseModel):
     user_id: str
     shop_name: str
     description: Optional[str] = None
+    logo: Optional[str] = None
     location: Optional[Location] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    country: Optional[str] = None
     total_sales: float = Field(default=0.0, ge=0)
     rating: float = Field(default=50.0, ge=0, le=100)
+    verified: bool = Field(default=False)
+    is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     class Config:

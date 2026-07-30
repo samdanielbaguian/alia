@@ -8,6 +8,7 @@ class UserRole(str, Enum):
     """User role enumeration."""
     MERCHANT = "merchant"
     BUYER = "buyer"
+    ADMIN = "admin"
 
 
 class Location(BaseModel):
@@ -22,7 +23,14 @@ class User(BaseModel):
     email: EmailStr
     password_hash: str
     role: UserRole
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     age: Optional[int] = None
+    birth_date: Optional[datetime] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    country: Optional[str] = None
     preferences: List[str] = Field(default_factory=list)
     good_rate: float = Field(default=50.0, ge=0, le=100)  # Rating from 0-100
     location: Optional[Location] = None

@@ -62,7 +62,7 @@ class SimulationService:
         logger.info(f"[SIMULATION] Initiating payment for order {order_id}")
 
         # Generate mock transaction ID
-        transaction_id = f"SIM_{secrets. token_hex(8).upper()}"
+        transaction_id = f"SIM_{secrets.token_hex(8).upper()}"
 
         # Determine behavior based on phone number (magic numbers)
         magic_behavior = MAGIC_NUMBERS.get(phone_number, "PENDING")
@@ -74,10 +74,10 @@ class SimulationService:
         # Fallback to old pattern matching if not a magic number
         if magic_behavior == "PENDING": 
             auto_success = phone_number.endswith(simulation_config["auto_success_pattern"])
-            auto_failure = phone_number. endswith(simulation_config["auto_failure_pattern"])
+            auto_failure = phone_number.endswith(simulation_config["auto_failure_pattern"])
 
         if auto_failure:
-            logger. info(f"[SIMULATION] Auto-failure pattern detected for {phone_number}")
+            logger.info(f"[SIMULATION] Auto-failure pattern detected for {phone_number}")
             # Schedule automatic failure after delay
             delay = 3
             asyncio.create_task(
