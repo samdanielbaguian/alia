@@ -647,7 +647,7 @@ async def ship_order(
         "message": "Order marked as shipped",
         "order_id": order_id,
         "status": "shipped",
-        "tracking_number": request.tracking_number,
+        "tracking_number": order.get("tracking_number"),
         "shipped_at": order.get("shipped_at")
     }
 

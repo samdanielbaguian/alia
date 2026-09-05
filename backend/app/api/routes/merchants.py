@@ -151,6 +151,8 @@ async def get_my_merchant_profile(
         )
     
     merchant = result[0]
+    orders = await db.orders.find({"merchant_id": user_id}, {"total_amount": 1}).to_list(length=None)
+    revenue = sum(order.get("total_amount", 0.0) for order in orders)
     return {
         "id": str(merchant["_id"]),
         "user_id": merchant["user_id"],
@@ -162,7 +164,9 @@ async def get_my_merchant_profile(
         "address": merchant.get("address"),
         "city": merchant.get("city"),
         "country": merchant.get("country"),
-        "total_sales": merchant.get("total_sales", 0.0),
+        # This KPI must be scoped to the authenticated merchant. Do not use
+        # the denormalized profile value, which can contain platform totals.
+        "total_sales": revenue,
         "rating": merchant.get("rating", 50.0),
         "verified": merchant.get("verified", False),
         "is_active": merchant.get("is_active", True),
@@ -441,14 +445,52 @@ async def get_merchant_dashboard(
     # Calculate total revenue
     revenue = sum(order["total_amount"] for order in orders)
 
-    # Calculate fees and merchant net payout from payments collection
-    fees_pipeline = [
-        {"$match": {"merchant_id": merchant_id, "status": "completed", "initiated_at": {"$gte": datetime.min, "$lte": datetime.max}}},
-        {"$group": {"_id": None, "total_platform_fees": {"$sum": {"$ifNull": ["$platform_fee", 0]}}, "total_merchant_payout": {"$sum": {"$ifNull": ["$merchant_payout", 0]}}}}
+    # Prefer fee fields stored on orders, which is also the source used by the
+    # admin dashboard. This covers orders whose payment is not completed yet.
+    fee_statuses = {"status": {"$in": ["delivered", "confirmed"]}}
+    order_fees_pipeline = [
+        {"$match": {"merchant_id": merchant_id, **fee_statuses}},
+        {"$group": {
+            "_id": None,
+            "total_platform_fees": {"$sum": {"$ifNull": ["$platform_fee", 0]}},
+            "total_merchant_payout": {"$sum": {"$ifNull": ["$merchant_payout", 0]}}
+        }}
     ]
-    fees_res = await db.payments.aggregate(fees_pipeline).to_list(length=1)
-    total_fees = fees_res[0].get("total_platform_fees") if fees_res else 0.0
-    merchant_net = fees_res[0].get("total_merchant_payout") if fees_res else 0.0
+    order_fees_res = await db.orders.aggregate(order_fees_pipeline).to_list(length=1)
+    fee_summary = order_fees_res[0] if order_fees_res else {}
+
+    # Include migrated orders in any status when the normal status-filtered
+    # aggregation has no fee data.
+    if not fee_summary or fee_summary.get("total_platform_fees", 0) == 0:
+        migrated_fees_pipeline = [
+            {"$match": {"merchant_id": merchant_id, "platform_fee": {"$exists": True}}},
+            {"$group": {
+                "_id": None,
+                "total_platform_fees": {"$sum": {"$ifNull": ["$platform_fee", 0]}},
+                "total_merchant_payout": {"$sum": {"$ifNull": ["$merchant_payout", 0]}}
+            }}
+        ]
+        migrated_fees_res = await db.orders.aggregate(migrated_fees_pipeline).to_list(length=1)
+        if migrated_fees_res:
+            fee_summary = migrated_fees_res[0]
+
+    total_fees = fee_summary.get("total_platform_fees", 0.0)
+    merchant_net = fee_summary.get("total_merchant_payout", 0.0)
+
+    # Legacy fallback: some old records keep fee data only in payments.
+    if total_fees == 0:
+        payments_pipeline = [
+            {"$match": {"merchant_id": merchant_id}},
+            {"$group": {
+                "_id": None,
+                "total_platform_fees": {"$sum": {"$ifNull": ["$platform_fee", 0]}},
+                "total_merchant_payout": {"$sum": {"$ifNull": ["$merchant_payout", 0]}}
+            }}
+        ]
+        payments_res = await db.payments.aggregate(payments_pipeline).to_list(length=1)
+        if payments_res:
+            total_fees = payments_res[0].get("total_platform_fees", total_fees)
+            merchant_net = payments_res[0].get("total_merchant_payout", merchant_net)
     
     # Get top selling products
     product_sales = {}
@@ -682,7 +724,15 @@ async def get_merchant_orders(
             created_at=order["created_at"],
             updated_at=order.get("updated_at", order["created_at"]),
             status_history=[
-                StatusHistoryResponse(**h) for h in order.get("status_history", [])
+                StatusHistoryResponse(
+                    **{
+                        **h,
+                        "changed_at": h.get("changed_at", h.get("timestamp")),
+                        "changed_by": h.get("changed_by", "system"),
+                    }
+                )
+                for h in order.get("status_history", [])
+                if h.get("changed_at", h.get("timestamp")) is not None
             ] if order.get("status_history") else None,
             cancelled_by=order.get("cancelled_by"),
             cancellation_reason=order.get("cancellation_reason"),
@@ -1014,12 +1064,20 @@ async def get_orders_stats(
     # Calculate summary
     total_orders = sum(s.orders_count for s in stats)
     total_sales = sum(s.total_amount for s in stats)
+    total_items_sold = 0
+    period_orders = await db.orders.find({
+        "merchant_id": user_id,
+        "created_at": {"$gte": start_datetime, "$lte": end_datetime}
+    }, {"products": 1}).to_list(length=None)
+    for order in period_orders:
+        total_items_sold += sum(product.get("quantity", 0) for product in order.get("products", []))
     avg_order_value = total_sales / total_orders if total_orders > 0 else 0.0
     
     summary = {
         "total_orders": total_orders,
         "total_sales": total_sales,
         "avg_order_value": round(avg_order_value, 2)
+        ,"total_items_sold": total_items_sold
     }
     
     return OrderStatsResponse(

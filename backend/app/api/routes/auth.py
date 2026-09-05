@@ -92,7 +92,7 @@ async def register(
     # Create access token with role and user details
     token_data = {
         "sub": user_id,
-        "email": new_user["email"],
+        "email": user_data["email"],
         "first_name": request.first_name,
         "last_name": request.last_name,
     }

@@ -121,11 +121,26 @@ class PaymentService:
         })
         
         if existing_payment:
-            return {
-                "success": False,
-                "message": "A pending payment already exists for this order",
-                "payment_id": existing_payment.get("payment_id")
-            }
+            # Lazily expire stale pending/processing payments so the user can retry.
+            # Treat a missing expires_at as stale too (legacy/malformed records).
+            expires_at = existing_payment.get("expires_at")
+            if not expires_at or expires_at < datetime.utcnow():
+                await db.payments.update_one(
+                    {"payment_id": existing_payment.get("payment_id")},
+                    {
+                        "$set": {
+                            "status": PaymentStatus.EXPIRED,
+                            "failure_reason": "Payment expired",
+                            "updated_at": datetime.utcnow()
+                        }
+                    }
+                )
+            else:
+                return {
+                    "success": False,
+                    "message": "A pending payment already exists for this order",
+                    "payment_id": existing_payment.get("payment_id")
+                }
         
         # Calculate fees
         # Try to read platform fee percentage from DB settings (single doc), fallback to env config

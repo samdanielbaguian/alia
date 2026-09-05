@@ -7,6 +7,7 @@ from fastapi import HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 import logging
+import secrets
 
 logger = logging.getLogger(__name__)
 
@@ -164,12 +165,9 @@ class OrderService:
                 detail=error_msg
             )
         
-        # Validate tracking number for shipped status
+        # Auto-generate a tracking number when shipping if the merchant didn't provide one
         if new_status == "shipped" and not tracking_number:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Tracking number is required when shipping an order"
-            )
+            tracking_number = f"ALIA-{order_id[-6:].upper()}-{secrets.token_hex(3).upper()}"
         
         # Prepare update data
         update_data = {

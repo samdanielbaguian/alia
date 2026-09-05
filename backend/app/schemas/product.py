@@ -23,6 +23,13 @@ class ProductCreate(BaseModel):
     weight: Optional[float] = None
     dimensions: Optional[str] = None
     material: Optional[str] = None
+    brand: Optional[str] = None
+    condition: Optional[str] = None
+    shipping_fee: float = Field(default=0, ge=0)
+    min_order_quantity: int = Field(default=1, ge=1)
+    max_order_quantity: Optional[int] = Field(None, ge=1)
+    tags: List[str] = []
+    is_active: bool = True
 
 
 class ProductUpdate(BaseModel):
@@ -43,6 +50,14 @@ class ProductUpdate(BaseModel):
     weight: Optional[float] = None
     dimensions: Optional[str] = None
     material: Optional[str] = None
+    original_price: Optional[float] = None
+    brand: Optional[str] = None
+    condition: Optional[str] = None
+    shipping_fee: Optional[float] = Field(None, ge=0)
+    min_order_quantity: Optional[int] = Field(None, ge=1)
+    max_order_quantity: Optional[int] = Field(None, ge=1)
+    tags: Optional[List[str]] = None
+    is_active: Optional[bool] = None
 
 
 class ProductImport(BaseModel):
@@ -91,6 +106,13 @@ class ProductResponse(BaseModel):
     weight: Optional[float] = None
     dimensions: Optional[str] = None
     material: Optional[str] = None
+    brand: Optional[str] = None
+    condition: Optional[str] = None
+    shipping_fee: float = 0
+    min_order_quantity: int = 1
+    max_order_quantity: Optional[int] = None
+    tags: List[str] = []
+    is_active: bool = True
     created_at: datetime
     updated_at: datetime
     

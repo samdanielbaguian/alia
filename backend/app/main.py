@@ -40,7 +40,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -84,6 +84,13 @@ async def root():
         "docs": "/docs",
         "health": "/health"
     }
+
+
+# Global OPTIONS handler for CORS preflight
+@app.options("/{full_path:path}")
+async def preflight_handler(full_path: str):
+    """Handle CORS preflight requests."""
+    return {}
 
 
 app.include_router(admin_stats.router, prefix=f"{settings.API_V1_PREFIX}/admin", tags=["Admin - Stats"])

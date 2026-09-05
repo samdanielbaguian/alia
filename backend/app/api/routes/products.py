@@ -376,6 +376,13 @@ async def create_product(
         "weight": product.weight,
         "dimensions": product.dimensions,
         "material": product.material,
+        "brand": product.brand,
+        "condition": product.condition,
+        "shipping_fee": product.shipping_fee,
+        "min_order_quantity": product.min_order_quantity,
+        "max_order_quantity": product.max_order_quantity,
+        "tags": product.tags,
+        "is_active": product.is_active,
         "created_at": datetime.utcnow(),
         "updated_at": datetime.utcnow()
     }
@@ -405,6 +412,13 @@ async def create_product(
         weight=product_data.get("weight"),
         dimensions=product_data.get("dimensions"),
         material=product_data.get("material"),
+        brand=product_data.get("brand"),
+        condition=product_data.get("condition"),
+        shipping_fee=product_data.get("shipping_fee", 0),
+        min_order_quantity=product_data.get("min_order_quantity", 1),
+        max_order_quantity=product_data.get("max_order_quantity"),
+        tags=product_data.get("tags", []),
+        is_active=product_data.get("is_active", True),
         created_at=product_data["created_at"],
         updated_at=product_data["updated_at"]
     )
@@ -452,6 +466,8 @@ async def update_product(
         update_data["description"] = product_update.description
     if product_update.price is not None:
         update_data["price"] = product_update.price
+    if product_update.original_price is not None:
+        update_data["original_price"] = product_update.original_price
     if product_update.images is not None:
         update_data["images"] = product_update.images
     if product_update.stock is not None:
@@ -476,6 +492,20 @@ async def update_product(
         update_data["dimensions"] = product_update.dimensions
     if product_update.material is not None:
         update_data["material"] = product_update.material
+    if product_update.brand is not None:
+        update_data["brand"] = product_update.brand
+    if product_update.condition is not None:
+        update_data["condition"] = product_update.condition
+    if product_update.shipping_fee is not None:
+        update_data["shipping_fee"] = product_update.shipping_fee
+    if product_update.min_order_quantity is not None:
+        update_data["min_order_quantity"] = product_update.min_order_quantity
+    if product_update.max_order_quantity is not None:
+        update_data["max_order_quantity"] = product_update.max_order_quantity
+    if product_update.tags is not None:
+        update_data["tags"] = product_update.tags
+    if product_update.is_active is not None:
+        update_data["is_active"] = product_update.is_active
     
     await db.products.update_one(
         {"_id": ObjectId(product_id)},
@@ -507,6 +537,13 @@ async def update_product(
         weight=updated_product.get("weight"),
         dimensions=updated_product.get("dimensions"),
         material=updated_product.get("material"),
+        brand=updated_product.get("brand"),
+        condition=updated_product.get("condition"),
+        shipping_fee=updated_product.get("shipping_fee", 0),
+        min_order_quantity=updated_product.get("min_order_quantity", 1),
+        max_order_quantity=updated_product.get("max_order_quantity"),
+        tags=updated_product.get("tags", []),
+        is_active=updated_product.get("is_active", True),
         created_at=updated_product["created_at"],
         updated_at=updated_product["updated_at"]
     )

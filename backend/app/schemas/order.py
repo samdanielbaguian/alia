@@ -51,8 +51,8 @@ class CustomerInfoResponse(BaseModel):
 class StatusHistoryResponse(BaseModel):
     """Schema for status history entry."""
     status: str
-    changed_at: datetime
-    changed_by: str
+    changed_at: Optional[datetime] = None
+    changed_by: Optional[str] = None
     note: Optional[str] = None
 
 
@@ -103,7 +103,7 @@ class StatusUpdateRequest(BaseModel):
 
 class ShipOrderRequest(BaseModel):
     """Schema for shipping an order."""
-    tracking_number: str = Field(..., description="Shipping tracking number")
+    tracking_number: Optional[str] = Field(None, description="Shipping tracking number (auto-generated if omitted)")
     carrier: Optional[str] = Field(None, description="Shipping carrier (e.g., DHL Express)")
     note: Optional[str] = Field(None, description="Optional note about shipment")
     

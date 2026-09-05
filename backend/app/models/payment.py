@@ -23,6 +23,7 @@ class PaymentProvider(str, Enum):
     ORANGE_MONEY = "orange_money"
     MTN_MONEY = "mtn_money"
     MOOV_MONEY = "moov_money"
+    SIMULATION = "simulation"
 
 
 def generate_payment_id() -> str:
